@@ -8,7 +8,7 @@ const SIGNALS = {buy: 'BUY NOW', wait: 'WAIT TO BUY', watch: 'WATCHLIST', pendin
 const state = {
   snapshot: null, cards: [], saved: new Set(), tab: 'all', query: '', rarity: 'all',
   sort: 'score', page: 0, updating: false, drawScheduled: false, toastTimer: null,
-  filterKey: '', filtered: [], details: new Map(), modalCard: null, returnFocus: null
+  filterKey: '', filtered: [], details: new Map(), modalCard: null, returnFocus: null, evaluatedDay: null
 };
 const moneyFormat = new Intl.NumberFormat('en-US', {style: 'currency', currency: 'USD'});
 const fmtMoney = value => Number.isFinite(value) ? moneyFormat.format(value) : 'Unavailable';
@@ -47,6 +47,7 @@ function applySnapshot(snapshot, cached = false) {
   state.snapshot = snapshot;
   state.cards = snapshot.cards.filter(card => card && card.id && card.name && card.year >= 2008 && (!Number.isFinite(card.price) || card.price < 100))
     .map(prepareCard);
+  state.evaluatedDay = Math.floor(Date.now() / 86400000);
   state.filterKey = '';
   const coverage = snapshot.coverage || {};
   const count = value => Number.isFinite(value) ? value.toLocaleString() : '—';
@@ -127,6 +128,7 @@ async function fetchJSON(file, force = false) {
 }
 async function runSync(force = false) {
   if (state.updating) return;
+  refreshFreshness();
   state.updating = true;
   $('refreshBtn').classList.add('busy'); $('refreshBtn').setAttribute('aria-busy', 'true'); $('retryBtn').disabled = true;
   setStatus('', state.snapshot ? 'Checking updates' : 'Loading snapshot');
@@ -140,8 +142,10 @@ async function runSync(force = false) {
     }
     const changed = !state.snapshot || state.snapshot.updatedAt !== snapshot.updatedAt || state.snapshot.builtAt !== snapshot.builtAt || state.snapshot.modelVersion !== snapshot.modelVersion;
     const offline = snapshot._offlineSnapshot === true;
-    if (changed) { state.details.clear(); applySnapshot(snapshot, offline); persistSnapshot(snapshot); }
-    else setStatus(offline ? 'error' : 'ready', offline ? 'Saved snapshot' : 'Snapshot current');
+    if (changed) { state.details.clear(); persistSnapshot(snapshot); }
+    // An unchanged artifact can still contain prices that have expired since the last paint.
+    applySnapshot(snapshot, offline);
+    if (!changed) setStatus(offline ? 'error' : 'ready', offline ? 'Saved snapshot' : 'Snapshot current');
     if (offline) {
       setStatus('error', 'Saved snapshot');
       $('syncTitle').textContent = 'Showing the last saved snapshot';
@@ -181,6 +185,7 @@ function detailHtml(card) {
   return `<div class="modal-intro">${image ? `<img src="${esc(image)}" alt="${esc(card.name)} artwork" width="100" height="139" loading="lazy">` : '<div class="card-placeholder" aria-hidden="true">◈</div>'}<div><div class="rarity">${esc(card.rarity)}</div><h2 id="modalHeading">${esc(card.name)}</h2><div class="set">${esc(card.set)} · ${esc(card.number)} · Released ${esc(card.year)}</div><div class="modal-price">${esc(fmtMoney(card.price))}</div><div class="modal-caption">Last verified: ${esc(card.verifiedMatch ? fmtDate(card.asOf) : 'Unverified match')}${card.stale ? ' · STALE' : ''}<br>English raw market average</div></div></div><div class="detail-signal"><span class="signal ${esc(card.signal)}">${SIGNALS[card.signal] || SIGNALS.pending}</span><b>Opportunity ${Number.isFinite(card.score) ? card.score : '—'}/100</b></div><div class="modal-metrics"><div><small>7-day change</small><b>${esc(fmtDelta(card.change7))}</b></div><div><small>30-day change</small><b>${esc(fmtDelta(card.change30))}</b></div><div><small>90-day change</small><b>${esc(fmtDelta(card.change90))}</b></div></div><div class="chart-wrap" id="detailChart" aria-live="polite"><p>Loading this card’s history…</p></div><div class="modal-comment"><b>Why this category:</b> ${esc(signalExplanation(card))}</div><div class="peer-panel"><h3>Compared with its set</h3><p>${peers.reliable ? `${esc(peers.count)} comparable cards · ${peers.setDeclining ? 'the set is declining' : 'no broad set decline detected'}` : card.peers ? `Insufficient suitable peers (${esc(peers.count || 0)} available). This comparison is not reliable.` : 'Loading the full set comparison…'}</p><dl><div><dt>Peer median · 30 days</dt><dd>${esc(fmtDelta(peers.median30))}</dd></div><div><dt>Peer median · 90 days</dt><dd>${esc(fmtDelta(peers.median90))}</dd></div><div><dt>Card vs. peers · 30 days</dt><dd>${Number.isFinite(peers.relative30) ? `${esc(peers.relative30.toFixed(1))} pp` : 'Unavailable'}</dd></div><div><dt>Card vs. peers · 90 days</dt><dd>${Number.isFinite(peers.relative90) ? `${esc(peers.relative90.toFixed(1))} pp` : 'Unavailable'}</dd></div><div><dt>Broader set · 30-day median</dt><dd>${esc(fmtDelta(peers.setMedian30))}</dd></div><div><dt>Broader set · 90-day median</dt><dd>${esc(fmtDelta(peers.setMedian90))}</dd></div><div><dt>90-day average price</dt><dd>${esc(fmtMoney(card.average90))}</dd></div><div><dt>Current vs. 90-day average</dt><dd>${Number.isFinite(card.belowAverage90) ? card.belowAverage90 === 0 ? 'At average' : `${esc(Math.abs(card.belowAverage90).toFixed(1))}% ${card.belowAverage90 < 0 ? 'below' : 'above'}` : 'Unavailable'}</dd></div><div><dt>Below recent 90-day high</dt><dd>${esc(fmtDelta(card.drop90))}</dd></div><div><dt>Comparable price rank</dt><dd>${Number.isFinite(peers.priceRank) && Number.isFinite(peers.rankTotal) ? `${esc(peers.priceRank)} of ${esc(peers.rankTotal)}` : 'Unavailable'}</dd></div></dl><p class="modal-caption">${Number.isFinite(peers.setCount) ? `Broader-set medians cover ${esc(peers.setCount)} other cards with usable history. ` : ''}Rank describes current price only; 1 is the highest price. It does not measure scarcity or predict returns.</p></div><div class="risk-panel"><b>Main risk</b><p>${esc(card.risk || 'Loading the full risk analysis. Market averages do not guarantee an available Near Mint offer.')}</p></div>${warnings.length ? `<p class="modal-caption data-warnings"><b>Data checks:</b> ${warnings.map(esc).join(' · ')}</p>` : ''}<div class="entry-panel"><span>Suggested entry / watch threshold</span><strong>${esc(fmtMoney(card.entryPrice))}</strong><small>A screening threshold, not a predicted future price.</small></div><dl class="data-availability"><div><dt>Sales volume</dt><dd>Unavailable</dd></div><div><dt>Near Mint listing quality</dt><dd>Unavailable</dd></div><div><dt>Historical observations</dt><dd>${Number.isFinite(card.historyObservations) ? esc(card.historyObservations) : 'Unavailable'}</dd></div></dl><p class="modal-caption">Scores use age (25%), set-relative value (25%), correction (20%), momentum (15%), collector popularity (10%), and liquidity (5%). Popularity is an editorial proxy. Missing liquidity contributes no evidence. Older cards cannot qualify on age alone. The provisional Buy Now threshold is ${Number.isFinite(state.snapshot?.buyThreshold) ? state.snapshot.buyThreshold : 80}; historical results do not establish predictive accuracy. Provider history begins in February 2024, including for older cards.</p><div class="modal-cta"><a href="${esc(tcgLink(card))}" target="_blank" rel="noopener noreferrer">Check actual Near Mint listings ↗</a>${source ? `<a class="secondary" href="${esc(source)}" target="_blank" rel="noopener noreferrer">TickerMint price source ↗</a>` : ''}</div><p class="modal-caption">Confirm the exact printing, English language, raw condition, shipping and fees. The market average is not a verified Near Mint offer.</p>`;
 }
 async function detail(card) {
+  card = prepareCard(card);
   modal(detailHtml(card)); state.modalCard = card._key;
   function renderDetail(record) {
     if (state.modalCard !== card._key) return;
@@ -260,6 +265,12 @@ function start() {
   if (!state.snapshot) draw();
   // Let cached cards paint before starting the network request.
   requestAnimationFrame(() => { setTimeout(() => runSync(), 0); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) runSync(); });
+  window.addEventListener('pageshow', event => { if (event.persisted) runSync(); });
+  setInterval(() => { if (!document.hidden && state.snapshot && state.evaluatedDay !== Math.floor(Date.now() / 86400000)) runSync(); }, 60000);
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js', {updateViaCache: 'none'}).catch(() => {});
+}
+function refreshFreshness() {
+  if (state.snapshot && state.evaluatedDay !== Math.floor(Date.now() / 86400000)) applySnapshot(state.snapshot, true);
 }
 start();

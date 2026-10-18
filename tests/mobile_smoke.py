@@ -67,12 +67,22 @@ class MobileWorkflow(unittest.TestCase):
                 revised = json.loads(summary)
                 revised['builtAt'] = '2026-01-01T00:00:00.000Z'
                 revised['coverage']['eligible'] += 1
+                # A synthetic fresh backend Buy row exercises expiration even on zero-signal days.
+                revised['cards'][0].update(signal='buy', score=90, verifiedMatch=True, stale=False,
+                                           price=25, asOf=revised['updatedAt'][:10])
                 page.route('**/summary.json*', lambda route: route.fulfill(
                     status=200, content_type='application/json', body=json.dumps(revised)))
                 page.wait_for_function("!document.querySelector('#refreshBtn').classList.contains('busy')")
                 page.locator('#refreshBtn').click()
                 expected = revised['coverage']['eligible']
                 page.wait_for_function("expected => Number(document.querySelector('#statEligible').textContent.replace(/,/g, '')) === expected", arg=expected)
+                page.wait_for_function("Number(document.querySelector('#buyN').textContent) > 0")
+                page.evaluate("updated => {const later = Date.parse(updated) + 6 * 86400000; Date.now = () => later;}", revised['updatedAt'])
+                page.wait_for_function("!document.querySelector('#refreshBtn').classList.contains('busy')")
+                page.locator('#refreshBtn').click()
+                page.wait_for_function("Number(document.querySelector('#buyN').textContent) === 0")
+                page.wait_for_function("!document.querySelector('#refreshBtn').classList.contains('busy')")
+                self.assertEqual(page.locator('#buyN').inner_text(), '0')
                 # Saved summary must paint when the background refresh cannot reach the server.
                 page.wait_for_timeout(300)
                 page.route('**/summary.json*', lambda route: route.abort())
