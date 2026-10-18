@@ -1,9 +1,9 @@
 /* Network-first shell and snapshots: fast offline use without pinning old code. */
 const PREFIX = `pokeradar-${new URL(self.registration.scope).pathname.replace(/[^a-z0-9]/gi, '_')}-`;
-const CACHE = `${PREFIX}v4`;
+const CACHE = `${PREFIX}v5`;
 const root = new URL(self.registration.scope);
 const summaryPath = new URL('summary.json', root).pathname;
-const shell = ['./', './index.html', './styles.css?v=4', './app.js?v=4', './manifest.webmanifest', './icon-192.png'];
+const shell = ['./', './index.html', './styles.css?v=5', './app.js?v=5', './manifest.webmanifest', './icon-192.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(shell)).then(() => self.skipWaiting()));
 });
