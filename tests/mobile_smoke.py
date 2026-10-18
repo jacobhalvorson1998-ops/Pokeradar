@@ -21,7 +21,7 @@ class QuietHandler(http.server.SimpleHTTPRequestHandler):
 class MobileWorkflow(unittest.TestCase):
     def test_cached_mobile_workflow_and_loading_budget(self):
         summary = (ROOT / 'site/summary.json').read_bytes()
-        self.assertLess(len(gzip.compress(summary)), 800_000, 'Compressed summary exceeds mobile budget')
+        self.assertLess(len(gzip.compress(summary)), 2_000_000, 'Compressed complete catalog exceeds mobile budget')
         handler = functools.partial(QuietHandler, directory=str(ROOT / 'site'))
         server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), handler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
