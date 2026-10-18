@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {classifyRarity,fanProxy,parseTickerHits,parseHistory,parseCSV,setKey} from '../scripts/sync.mjs';
+import {classifyRarity,fromBrief,fanProxy,parseTickerHits,parseHistory,parseCSV,setKey} from '../scripts/sync.mjs';
 test('new and vintage rarity categories',()=>{
  assert.equal(classifyRarity('Illustration rare','166','151',2023),'IR');
  assert.equal(classifyRarity('Special illustration rare','198','151',2023),'SIR');
@@ -24,3 +24,12 @@ test('History chooses foil printing not reverse foil',()=>{
  assert.deepEqual(rows,[['2026-10-01',10],['2026-10-02',12]]);
 });
 test('stable catalog keys preserve published price identities',()=>{assert.equal(setKey('Stormfront','103/100'),'stormfront|103/100')});
+
+test('all English rarities and 1999 Base Set are included',()=>{
+ const set={id:'base1',name:'Base Set',releaseDate:'1999-01-09',cardCount:{official:102}};
+ const holo=fromBrief({id:'base1-1',localId:'1',name:'Alakazam'},set,'Rare Holo');
+ assert.equal(holo.year,1999);assert.equal(holo.number,'1/102');
+ assert.equal(holo.rarity,'Standard');assert.equal(holo.sourceRarity,'Rare Holo');
+ assert.equal(fromBrief({id:'base1-55',localId:'55',name:'Nidoran'},set,'Common').rarity,'Standard');
+ assert.equal(fromBrief({id:'base1-100',localId:'100',name:'Lightning Energy'},set,null).rarity,'Unclassified');
+});
