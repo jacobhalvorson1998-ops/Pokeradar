@@ -1,4 +1,8 @@
-# PokéRadar
+# PokéRadar — complete English TCG catalog, any price
+
+The tracker now supports **every English physical Pokémon TCG card that TCGdex identifies**, from the first English sets through current releases, including commons, uncommons, regular rares and chase cards. The website shows **All prices** by default, with editable minimum/maximum prices and quick presets stored on your iPhone. Filters affect only the displayed cards; price data may be missing or stale while the daily provider scan expands coverage. This is an English-language catalog; Japanese printings require separate source integration.
+
+## Earlier documentation
 
 An English, raw Pokémon chase-card screen for physical sets released from 2008 onward. Known prices at or above $100 are excluded from the main list. Unknown prices remain clearly marked as insufficient data.
 
