@@ -1,111 +1,265 @@
-/* PokéRadar Mobile v2 — first paint from static catalog, prices only from verified sources. */
+/* PokéRadar: precomputed market snapshot, 18-card pages, on-demand histories. */
 'use strict';
-const $=id=>document.getElementById(id);
-const STORE='pokeradar_mobile_v3', SAVED='pokeradar_saved_mobile';
-const state={coverage:null,catalog:[],market:{},saved:new Set(),tab:'all',query:'',rarity:'all',sort:'oldest',limit:18,updating:false,progress:0,total:0,connected:false,toastTimer:null,drawScheduled:false};
-const fmtMoney=n=>Number.isFinite(n)?new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(n):'—';
-const fmtDelta=n=>Number.isFinite(n)?`${n>0?'+':''}${n.toFixed(1)}%`:'—';
-const esc=s=>String(s??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
-const validHttps=s=>{try{const u=new URL(s);return u.protocol==='https:'?u.href:''}catch{return ''}};
-const tcgLink=c=>`https://www.tcgplayer.com/search/pokemon/product?productLineName=pokemon&q=${encodeURIComponent(`${c.name} ${c.number} ${c.set}`)}&view=grid`;
-const ageDays=s=>s?Math.max(0,(Date.now()-Date.parse(s+'T12:00:00Z'))/86400000):Infinity;
-const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-function readStore(){try{const s=JSON.parse(localStorage.getItem(STORE)||'{}');if(s&&s.version===3&&s.market&&typeof s.market==='object')state.market=s.market}catch{}try{state.saved=new Set(JSON.parse(localStorage.getItem(SAVED)||'[]'))}catch{}}
-let storeTimer;function persist(){clearTimeout(storeTimer);storeTimer=setTimeout(()=>{try{localStorage.setItem(STORE,JSON.stringify({version:3,market:state.market,savedAt:new Date().toISOString()}));localStorage.setItem(SAVED,JSON.stringify([...state.saved]))}catch(e){console.warn('Browser storage limit reached',e)}},250)}
-function nearest(series,days){if(!Array.isArray(series)||series.length<3)return null;const today=Date.parse(series.at(-1)[0]+'T12:00:00Z');const target=today-days*86400000;let best=null,dist=Infinity;for(let i=0;i<series.length-1;i++){const diff=Math.abs(Date.parse(series[i][0]+'T12:00:00Z')-target);if(diff<dist){dist=diff;best=series[i][1]}}return dist<=Math.max(3,days*.25)*86400000?best:null}
-function metrics(m){const series=Array.isArray(m.history)?m.history.filter(x=>Array.isArray(x)&&Number.isFinite(x[1])&&x[1]>0):[];
- let p=Number.isFinite(m.price)&&ageDays(m.asOf)<=4?m.price:null;
- let asOf=m.asOf||null;
- if(p===null&&series.length){p=series.at(-1)[1];asOf=series.at(-1)[0]}
- const stale=!Number.isFinite(ageDays(asOf))||ageDays(asOf)>4;
- const cs=series.slice(-120);if(cs.length&&p!==null&&asOf>=cs.at(-1)[0]){if(asOf===cs.at(-1)[0])cs[cs.length-1]=[asOf,p];else cs.push([asOf,p])}
- const delta=days=>{const ref=nearest(cs,days);return ref&&p!==null?Math.round((p/ref-1)*1000)/10:null};
- const past90=cs.filter(x=>ageDays(x[0])<=90);const hi=past90.length?Math.max(...past90.map(x=>x[1])):null;
- return {price:p,asOf,stale,days:cs.length,change7:delta(7),change30:delta(30),change90:delta(90),drop90:hi&&p?Math.round((p/hi-1)*1000)/10:null};
+const $ = id => document.getElementById(id);
+const STORE = 'pokeradar_snapshot_v4';
+const SAVED = 'pokeradar_saved_mobile';
+const PAGE_SIZE = 18;
+const SIGNALS = {buy: 'BUY NOW', wait: 'WAIT TO BUY', watch: 'WATCHLIST', pending: 'INSUFFICIENT DATA'};
+const state = {
+  snapshot: null, cards: [], saved: new Set(), tab: 'all', query: '', rarity: 'all',
+  sort: 'score', page: 0, updating: false, drawScheduled: false, toastTimer: null,
+  filterKey: '', filtered: [], details: new Map(), modalCard: null, returnFocus: null
+};
+const moneyFormat = new Intl.NumberFormat('en-US', {style: 'currency', currency: 'USD'});
+const fmtMoney = value => Number.isFinite(value) ? moneyFormat.format(value) : 'Unavailable';
+const fmtDelta = value => Number.isFinite(value) ? `${value > 0 ? '+' : ''}${value.toFixed(1)}%` : 'Unavailable';
+const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const validHttps = value => { try { const url = new URL(value); return url.protocol === 'https:' ? url.href : ''; } catch { return ''; } };
+const cardKey = card => String(card.key || card.id);
+const tcgLink = card => `https://www.tcgplayer.com/search/pokemon/product?productLineName=pokemon&q=${encodeURIComponent(`${card.name} ${card.number} ${card.set}`)}&view=grid&Condition=Near+Mint&Language=English`;
+function fmtDate(value, includeTime = false) {
+  const date = new Date(value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00Z` : value);
+  return value && Number.isFinite(date.getTime()) ? date.toLocaleString(undefined, {year: 'numeric', month: 'short', day: 'numeric', ...(includeTime ? {hour: 'numeric', minute: '2-digit'} : {})}) : 'Unavailable';
 }
-function recommendation(c,d){
- if(!c.productId||!c.verifiedMatch||d.price===null||d.stale)return {signal:'pending',score:null,reason:'Waiting for a recent, correctly matched card price.'};
- if(d.price>100)return {signal:'over',score:null,reason:'Above the $100 raw-market budget.'};
- if(d.change7===null||d.change30===null||d.drop90===null||d.days<28)return {signal:'pending',score:null,reason:'Verified price available; collecting 7- and 30-day history before making a recommendation.'};
- const decline=Math.min(100,Math.max(0,-d.drop90)*3.1);
- const trend=d.change7>=-3&&d.change7<=4?95:d.change7< -3?35:60;
- const ageStrength=Math.min(100,20+Math.max(0,new Date().getFullYear()-c.year)*4);
- // Older cards receive 28% of the opportunity score, increased from 10%.
- const score=Math.round(.31*decline+.19*c.hype+.22*trend+.28*ageStrength);
- if(d.drop90<=-18&&d.change30<=-7&&d.change7>=-3&&d.change7<=4&&c.hype>=75)return {signal:'buy',score,reason:'Price corrected meaningfully and the last week stabilized. Verify a Near Mint listing and actual inventory.'};
- if((d.drop90<=-12||d.change30<=-10)&&(d.change7< -3||(d.change30< -16&&d.change7<0)))return {signal:'wait',score,reason:'The price is still sliding; watch for stabilization.'};
- return {signal:'watch',score,reason:'No strong pullback-plus-stabilization signal yet.'};
+function prepareCard(card) {
+  const quoteDate = /^\d{4}-\d{2}-\d{2}$/.test(card.asOf || '') ? Date.parse(`${card.asOf}T12:00:00Z`) : Date.parse(card.asOf);
+  const stale = card.stale || !Number.isFinite(quoteDate) || Math.floor(Date.now() / 86400000) - Math.floor(quoteDate / 86400000) > 4;
+  const expired = stale && card.signal !== 'pending';
+  return {...card, stale, ...(expired ? {signal: 'pending', score: null, reason: 'Saved price is stale. A recent verified quote is required before making a recommendation.'} : {}), _key: cardKey(card), _search: `${card.name} ${card.set} ${card.number} ${card.year}`.toLowerCase()};
 }
-function enrich(c){const m=state.market[c.key]||{},d=metrics(m),s=recommendation({...c,...m},d);return {...c,...m,...d,...s}}
-function observed(c){return c.verifiedMatch&&c.price!==null&&!c.stale}
-function qualified(c){return observed(c)&&c.price<=100&&c.price>0}
-function sorted(){let list=state.catalog.map(enrich).filter(c=>!observed(c)||c.price<=100);const all=list.filter(qualified),buys=all.filter(c=>c.signal==='buy'),waits=all.filter(c=>c.signal==='wait'),watches=all.filter(c=>c.signal==='watch'||c.signal==='pending');
- $('statEligible').textContent=all.length;$('statBuy').textContent=buys.length;$('statWait').textContent=waits.length;
- const biggest=all.filter(c=>Number.isFinite(c.change30)).sort((a,b)=>a.change30-b.change30)[0];$('statDip').textContent=biggest?fmtDelta(biggest.change30):'—';$('statDipName').textContent=biggest?biggest.name:'Awaiting verified history';
- $('allN').textContent=list.length;$('buyN').textContent=buys.length;$('waitN').textContent=waits.length;$('watchN').textContent=watches.length;$('savedN').textContent=state.saved.size;
- if(state.tab==='buy')list=buys;else if(state.tab==='wait')list=waits;else if(state.tab==='watch')list=watches;else if(state.tab==='saved')list=list.filter(c=>state.saved.has(c.key));
- if(state.query){const q=state.query.toLowerCase();list=list.filter(c=>`${c.name} ${c.set} ${c.number}`.toLowerCase().includes(q))}
- if(state.rarity!=='all')list=list.filter(c=>c.rarity===state.rarity);
- const pendingRank=c=>c.signal==='buy'?0:c.signal==='wait'?1:c.signal==='watch'?2:c.signal==='pending'?3:4;
- list.sort((a,b)=>state.sort==='oldest'?a.year-b.year:state.sort==='newest'?b.year-a.year:state.sort==='alpha'?a.name.localeCompare(b.name):state.sort==='hype'?b.hype-a.hype:state.sort==='price'?(a.price??1e10)-(b.price??1e10):state.sort==='dip'?(a.change30??1e10)-(b.change30??1e10):(a.score!==null&&b.score===null?-1:b.score!==null&&a.score===null?1:0)||pendingRank(a)-pendingRank(b)||(b.score??-1)-(a.score??-1)||a.year-b.year||b.hype-a.hype);
- return list;
+function signalExplanation(card) {
+  return card.reason || ({buy: 'Passed the price, history, valuation and stabilization gates. Open for the full analysis.', wait: 'A possible opportunity with weak momentum or unresolved downside. Open for the full analysis.', watch: 'Usable evidence without a qualifying buying signal. Open for the full analysis.', pending: 'More recent prices, history, or reliable comparisons are needed.'}[card.signal] || 'More verified evidence is needed.');
 }
-function cardHtml(c){const priceText=observed(c)?fmtMoney(c.price):'Price pending', sig=c.price>100&&observed(c)?'over':c.signal;
- const badge={buy:'● BUY NOW',wait:'● WAIT TO BUY',watch:'◉ WATCH',pending:'◷ VERIFYING',over:'OVER $100'}[sig]||'VERIFYING';
- const delta=qualified(c)&&Number.isFinite(c.change30)?`<span class="delta ${c.change30<=0?'down':'up'}">${esc(fmtDelta(c.change30))} 30D</span>`:'';
- const img=validHttps(c.image);const imgHtml=img?`<img class="card-image" src="${esc(img)}" alt="${esc(c.name)} card art" loading="lazy" decoding="async">`:`<div class="card-placeholder" aria-hidden="true">◈</div>`;
- const tcg=tcgLink(c);const mint=validHttps(c.tickermintUrl);const sourceLink=observed(c)&&mint?`<a href="${esc(mint)}" target="_blank" rel="noopener noreferrer" title="Verified price source on TickerMint" class="mini-source">price source ↗</a>`:'';
- return `<article class="card" data-key="${esc(c.key)}"><div class="card-top"><a href="${esc(tcg)}" target="_blank" rel="noopener noreferrer" title="Find the card on TCGplayer">${imgHtml}</a><div class="card-info"><div class="rarity">${esc(c.rarity)}</div><h3><a href="${esc(tcg)}" target="_blank" rel="noopener noreferrer">${esc(c.name)} ↗</a></h3><div class="set">${esc(c.set)} · ${esc(c.number)}<br>${c.year}</div><div class="price-line"><strong>${priceText}</strong>${delta}</div>${sourceLink}</div></div><div class="signal-row"><span class="signal ${sig==='over'?'pending':sig}">${badge}</span><span class="score">FAN <b>${c.hype}</b> · SCORE <b>${Number.isFinite(c.score)?c.score:'—'}</b></span></div><div class="card-links"><a class="tcg-link" href="${esc(tcg)}" target="_blank" rel="noopener noreferrer">Check TCGplayer ↗</a><button class="save-btn ${state.saved.has(c.key)?'active':''}" aria-label="${state.saved.has(c.key)?'Unsave':'Save'} ${esc(c.name)}" data-save="${esc(c.key)}">${state.saved.has(c.key)?'★':'☆'}</button></div><button class="card-inspect" type="button" data-detail="${esc(c.key)}"><span>Price history &amp; buy/wait reasoning</span><span>›</span></button></article>`;
+function readStore() {
+  try { const saved = JSON.parse(localStorage.getItem(SAVED) || '[]'); if (Array.isArray(saved)) state.saved = new Set(saved.filter(x => typeof x === 'string')); } catch {}
+  try {
+    const snapshot = JSON.parse(localStorage.getItem(STORE) || 'null');
+    if (snapshot?.version === 4 && Array.isArray(snapshot.cards)) applySnapshot(snapshot, true);
+  } catch {}
 }
-function draw(){state.drawScheduled=false;const all=sorted(),visible=all.slice(0,state.limit);$('cardList').innerHTML=visible.map(cardHtml).join('');$('showingCount').textContent=`Showing ${visible.length} of ${all.length} cards`; $('resultsLabel').textContent=`${state.catalog.length.toLocaleString()} discovered chase cards (2008–now) · ${state.catalog.filter(c=>observed(enrich(c))).length} recent price quotes · scans expand daily`;
- $('empty').hidden=all.length!==0;$('moreBtn').hidden=state.limit>=all.length;document.querySelectorAll('[data-tab]').forEach(b=>{b.classList.toggle('active',b.dataset.tab===state.tab);b.setAttribute('aria-selected',String(b.dataset.tab===state.tab))})}
-function scheduleDraw(){if(state.drawScheduled)return;state.drawScheduled=true;requestAnimationFrame(draw)}
-function setStatus(mode,label){$('connection').className='connection '+mode;$('connectionText').textContent=label}
-function syncProgress(done,total,title,description){$('syncTitle').textContent=title;$('syncDescription').textContent=description;$('syncProgress').style.width=(total?Math.round(done/total*100):0)+'%';$('syncPercent').textContent=(total?Math.round(done/total*100):0)+'%';const recent=Object.values(state.market).map(x=>x.asOf).filter(Boolean).sort().at(-1);$('syncDate').textContent=recent?`Latest provider quote: ${recent} · prices may vary by condition`:'No verified market snapshot yet'}
-function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(state.toastTimer);state.toastTimer=setTimeout(()=>$('toast').hidden=true,3500)}
-async function fetchJSON(file){const url=new URL(file,location.href);url.searchParams.set('t',String(Date.now()));const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),20000);try{const r=await fetch(url.toString(),{cache:'no-store',signal:ctrl.signal});if(!r.ok)throw Error(`${r.status} ${file}`);return await r.json()}finally{clearTimeout(timer)}}
-async function runSync(force=false){
- if(state.updating)return;state.updating=true;$('refreshBtn').classList.add('busy');$('retryBtn').disabled=true;setStatus('','Checking');
- try{
-  const catalog=await fetchJSON('catalog.json');if(!Array.isArray(catalog.cards))throw Error('The catalog file is missing cards');
-  state.catalog=catalog.cards;state.coverage=catalog.progress||null;scheduleDraw();
-  syncProgress(1,2,'Card list updated',`${state.catalog.length.toLocaleString()} cards discovered; retrieving saved daily price snapshots…`);
-  const snapshot=await fetchJSON('prices.json');if(snapshot.prices&&typeof snapshot.prices==='object'){
-   for(const [key,record] of Object.entries(snapshot.prices)){
-    const old=state.market[key];
-    if(!old||String(record.asOf||'')>=String(old.asOf||''))state.market[key]=record;
-   }
+function persistSaved() { try { localStorage.setItem(SAVED, JSON.stringify([...state.saved])); } catch {} }
+function persistSnapshot(snapshot) {
+  // Store the compact published snapshot only; full price histories never enter localStorage.
+  const save = () => { try { localStorage.setItem(STORE, JSON.stringify(snapshot)); } catch {} };
+  if ('requestIdleCallback' in window) requestIdleCallback(save, {timeout: 1500}); else setTimeout(save, 0);
+}
+function applySnapshot(snapshot, cached = false) {
+  state.snapshot = snapshot;
+  state.cards = snapshot.cards.filter(card => card && card.id && card.name && card.year >= 2008 && (!Number.isFinite(card.price) || card.price < 100))
+    .map(prepareCard);
+  state.filterKey = '';
+  const coverage = snapshot.coverage || {};
+  const count = value => Number.isFinite(value) ? value.toLocaleString() : '—';
+  $('statReviewed').textContent = count(coverage.reviewed);
+  $('statUniverse').textContent = Number.isFinite(coverage.universe) ? `${count(coverage.universe)} physical cards checked by rarity` : 'Checking eligible rarities';
+  $('statEligible').textContent = count(coverage.eligible);
+  $('statVerified').textContent = count(coverage.verified);
+  $('statHistory').textContent = count(coverage.historyReady);
+  $('allN').textContent = count(state.cards.length);
+  for (const signal of Object.keys(SIGNALS)) $(signal === 'pending' ? 'pendingN' : `${signal}N`).textContent = count(state.cards.filter(card => card.signal === signal).length);
+  updateSavedCount();
+  $('syncTitle').textContent = cached ? 'Saved catalog ready' : 'Latest published snapshot loaded';
+  $('syncDescription').textContent = 'Daily updates run in the cloud. Refresh checks the published snapshot; it does not start a provider scan.';
+  $('syncDate').textContent = `Last updated: ${fmtDate(snapshot.updatedAt, true)}`;
+  $('resultsLabel').textContent = `${state.cards.length.toLocaleString()} cards in view · English raw cards from 2008 · known prices under $100`;
+  setStatus(cached ? '' : 'ready', cached ? 'Saved snapshot' : 'Snapshot ready');
+  scheduleDraw();
+}
+function updateSavedCount() { $('savedN').textContent = state.cards.filter(card => state.saved.has(card._key)).length.toLocaleString(); }
+function sorted() {
+  const filterKey = JSON.stringify([state.tab, state.query, state.rarity, state.sort, state.tab === 'saved' ? [...state.saved] : '']);
+  if (filterKey === state.filterKey) return state.filtered;
+  let cards = state.cards.filter(card => (state.tab === 'all' || (state.tab === 'saved' ? state.saved.has(card._key) : card.signal === state.tab)) && (!state.query || card._search.includes(state.query)) && (state.rarity === 'all' || card.rarity === state.rarity));
+  const rank = {buy: 0, wait: 1, watch: 2, pending: 3};
+  const scoreOrder = (a, b) => (rank[a.signal] ?? 4) - (rank[b.signal] ?? 4) || (b.score ?? -1) - (a.score ?? -1) || a.year - b.year || a.name.localeCompare(b.name);
+  cards.sort((a, b) => {
+    if (state.sort === 'oldest') return a.year - b.year || scoreOrder(a, b);
+    if (state.sort === 'newest') return b.year - a.year || scoreOrder(a, b);
+    if (state.sort === 'alpha') return a.name.localeCompare(b.name) || a.year - b.year;
+    if (state.sort === 'price') return (a.price ?? Infinity) - (b.price ?? Infinity) || scoreOrder(a, b);
+    if (state.sort === 'dip') return (a.change30 ?? Infinity) - (b.change30 ?? Infinity) || scoreOrder(a, b);
+    return scoreOrder(a, b);
+  });
+  state.filterKey = filterKey;
+  state.filtered = cards;
+  return cards;
+}
+function cardHtml(card) {
+  const image = validHttps(card.image);
+  const signal = SIGNALS[card.signal] ? card.signal : 'pending';
+  const price = Number.isFinite(card.price) ? fmtMoney(card.price) : 'Price unavailable';
+  const priceNote = card.verifiedMatch ? (card.stale ? 'Saved price · stale' : `Verified ${fmtDate(card.asOf)}`) : 'Match verification needed';
+  const change = Number.isFinite(card.change30) ? `<span class="delta ${card.change30 < 0 ? 'down' : 'up'}">${esc(fmtDelta(card.change30))} 30D</span>` : '';
+  const saved = state.saved.has(card._key);
+  return `<article class="card" data-key="${esc(card._key)}"><div class="card-top"><button type="button" class="art-button" data-detail="${esc(card._key)}" aria-label="View ${esc(card.name)} details">${image ? `<img class="card-image" src="${esc(image)}" alt="${esc(card.name)} card art" width="78" height="109" loading="lazy" decoding="async">` : '<div class="card-placeholder" aria-hidden="true">◈</div>'}</button><div class="card-info"><div class="rarity">${esc(card.rarity)}</div><h3><button type="button" data-detail="${esc(card._key)}">${esc(card.name)}</button></h3><div class="set">${esc(card.set)} · ${esc(card.number)} · ${esc(card.year)}</div><div class="price-line"><strong>${esc(price)}</strong>${change}</div><div class="price-date ${card.stale ? 'stale' : ''}">${esc(priceNote)}</div></div></div><div class="signal-row"><span class="signal ${signal}">${SIGNALS[signal]}</span><span class="score">SCORE <b>${Number.isFinite(card.score) ? card.score : '—'}</b><small>/100</small></span></div><p class="card-reason">${esc(signalExplanation(card))}</p><div class="card-links"><a class="tcg-link" href="${esc(tcgLink(card))}" target="_blank" rel="noopener noreferrer">Check Near Mint listings ↗</a><button type="button" class="save-btn ${saved ? 'active' : ''}" aria-label="${saved ? 'Unsave' : 'Save'} ${esc(card.name)}" aria-pressed="${saved}" data-save="${esc(card._key)}">${saved ? '★' : '☆'}</button></div><button class="card-inspect" type="button" data-detail="${esc(card._key)}"><span>History, set comparison &amp; risks</span><span>›</span></button></article>`;
+}
+function draw() {
+  state.drawScheduled = false;
+  const all = sorted();
+  const pages = Math.max(1, Math.ceil(all.length / PAGE_SIZE));
+  state.page = Math.min(state.page, pages - 1);
+  const start = state.page * PAGE_SIZE;
+  const visible = all.slice(start, start + PAGE_SIZE);
+  $('cardList').innerHTML = visible.map(cardHtml).join('');
+  $('showingCount').textContent = all.length ? `${start + 1}–${start + visible.length} of ${all.length.toLocaleString()} cards` : '0 cards';
+  $('empty').hidden = all.length > 0;
+  $('pagination').hidden = pages === 1;
+  $('prevBtn').disabled = state.page === 0;
+  $('moreBtn').disabled = state.page + 1 >= pages;
+  $('pageLabel').textContent = `Page ${state.page + 1} of ${pages}`;
+  document.querySelectorAll('[data-tab]').forEach(button => { const active = button.dataset.tab === state.tab; button.classList.toggle('active', active); button.setAttribute('aria-selected', String(active)); button.tabIndex = active ? 0 : -1; });
+}
+function scheduleDraw() { if (!state.drawScheduled) { state.drawScheduled = true; requestAnimationFrame(draw); } }
+function setStatus(mode, label) { $('connection').className = `connection ${mode}`; $('connectionText').textContent = label; }
+function toast(message) { $('toast').textContent = message; $('toast').hidden = false; clearTimeout(state.toastTimer); state.toastTimer = setTimeout(() => { $('toast').hidden = true; }, 4000); }
+async function fetchJSON(file, force = false) {
+  const url = new URL(file, location.href);
+  if (force) url.searchParams.set('refresh', Date.now());
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch(url, {cache: 'no-cache', signal: controller.signal});
+    if (!response.ok) throw new Error(`Snapshot request failed (${response.status})`);
+    const data = await response.json();
+    if (data && typeof data === 'object') Object.defineProperty(data, '_offlineSnapshot', {value: response.headers.get('X-Pokeradar-Cache') === 'offline'});
+    return data;
+  } finally { clearTimeout(timeout); }
+}
+async function runSync(force = false) {
+  if (state.updating) return;
+  state.updating = true;
+  $('refreshBtn').classList.add('busy'); $('refreshBtn').setAttribute('aria-busy', 'true'); $('retryBtn').disabled = true;
+  setStatus('', state.snapshot ? 'Checking updates' : 'Loading snapshot');
+  try {
+    const snapshot = await fetchJSON('summary.json', force);
+    if (snapshot.version !== 4 || !Array.isArray(snapshot.cards)) throw new Error('Published summary has an unsupported format');
+    if (state.snapshot && String(snapshot.updatedAt || '') < String(state.snapshot.updatedAt || '')) {
+      setStatus('ready', 'Saved snapshot');
+      if (force) toast('The saved snapshot is newer than this published response. Keeping saved prices.');
+      return;
+    }
+    const changed = !state.snapshot || state.snapshot.updatedAt !== snapshot.updatedAt || state.snapshot.builtAt !== snapshot.builtAt || state.snapshot.modelVersion !== snapshot.modelVersion;
+    const offline = snapshot._offlineSnapshot === true;
+    if (changed) { state.details.clear(); applySnapshot(snapshot, offline); persistSnapshot(snapshot); }
+    else setStatus(offline ? 'error' : 'ready', offline ? 'Saved snapshot' : 'Snapshot current');
+    if (offline) {
+      setStatus('error', 'Saved snapshot');
+      $('syncTitle').textContent = 'Showing the last saved snapshot';
+      $('syncDescription').textContent = 'The published site could not be reached. Saved prices remain available; reconnect and refresh for updates.';
+    }
+    if (force) toast(offline ? 'Using saved data. The published snapshot could not be reached.' : changed ? 'Latest published catalog and prices loaded.' : 'You have the latest published snapshot.');
+  } catch (error) {
+    setStatus('error', state.snapshot ? 'Saved snapshot' : 'Offline');
+    $('syncTitle').textContent = state.snapshot ? 'Showing the last saved snapshot' : 'Snapshot could not be loaded';
+    $('syncDescription').textContent = state.snapshot ? 'Your saved catalog and prices remain available. Reconnect and tap Refresh to check for updates.' : 'Connect to the internet and tap Refresh to download the published catalog.';
+    if (force) toast(state.snapshot ? 'Using saved data. No new snapshot could be reached.' : 'Snapshot unavailable. Please try again when connected.');
+    console.warn('Snapshot refresh:', error.message);
+  } finally { state.updating = false; $('refreshBtn').classList.remove('busy'); $('refreshBtn').removeAttribute('aria-busy'); $('retryBtn').disabled = false; }
+}
+function chart(series) {
+  const rows = Array.isArray(series) ? series.filter(row => Array.isArray(row) && /^\d{4}-\d{2}-\d{2}$/.test(row[0]) && Number.isFinite(row[1]) && row[1] > 0).slice(-120) : [];
+  if (rows.length < 3) return '<p>Not enough verified observations to show a price chart.</p>';
+  const min = Math.min(...rows.map(row => row[1])); const max = Math.max(...rows.map(row => row[1])); const range = max - min || 1;
+  const dates = rows.map(row => Date.parse(`${row[0]}T12:00:00Z`));
+  const duration = dates.at(-1) - dates[0] || 1;
+  const points = rows.map((row, i) => [15 + 595 * (dates[i] - dates[0]) / duration, 148 - 110 * (row[1] - min) / range]);
+  const path = points.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(2)} ${y.toFixed(2)}`).join(' ');
+  return `<svg viewBox="0 0 640 195" role="img" aria-label="${rows.length} observed prices from ${esc(rows[0][0])} to ${esc(rows.at(-1)[0])}"><path d="M15 38 H610 M15 95 H610 M15 152 H610" stroke="#33546a" fill="none" stroke-dasharray="4 5"/><path d="${path}" fill="none" stroke="#a4ecd1" stroke-width="3" stroke-linejoin="round"/><text x="7" y="19" font-size="11" fill="#a9c9c9">${esc(fmtMoney(max))}</text><text x="7" y="173" font-size="11" fill="#a9c9c9">${esc(fmtMoney(min))}</text><text x="15" y="190" font-size="10" fill="#a9c9c9">${esc(rows[0][0])}</text><text x="610" y="190" text-anchor="end" font-size="10" fill="#a9c9c9">${esc(rows.at(-1)[0])}</text></svg><p class="chart-caption">Observed provider prices; lines connect observations across gaps.</p>`;
+}
+function modal(html) {
+  state.returnFocus = document.activeElement;
+  $('modalBody').innerHTML = html; $('modalOverlay').hidden = false;
+  document.body.style.overflow = 'hidden'; $('closeModal').focus();
+}
+function closeModal() {
+  state.modalCard = null; $('modalOverlay').hidden = true; document.body.style.overflow = '';
+  if (state.returnFocus?.isConnected) state.returnFocus.focus();
+}
+function detailHtml(card) {
+  const image = validHttps(card.image); const source = validHttps(card.tickermintUrl); const peers = card.peers || {};
+  const warnings = Array.isArray(card.qualityWarnings) ? card.qualityWarnings : [];
+  return `<div class="modal-intro">${image ? `<img src="${esc(image)}" alt="${esc(card.name)} artwork" width="100" height="139" loading="lazy">` : '<div class="card-placeholder" aria-hidden="true">◈</div>'}<div><div class="rarity">${esc(card.rarity)}</div><h2 id="modalHeading">${esc(card.name)}</h2><div class="set">${esc(card.set)} · ${esc(card.number)} · Released ${esc(card.year)}</div><div class="modal-price">${esc(fmtMoney(card.price))}</div><div class="modal-caption">Last verified: ${esc(card.verifiedMatch ? fmtDate(card.asOf) : 'Unverified match')}${card.stale ? ' · STALE' : ''}<br>English raw market average</div></div></div><div class="detail-signal"><span class="signal ${esc(card.signal)}">${SIGNALS[card.signal] || SIGNALS.pending}</span><b>Opportunity ${Number.isFinite(card.score) ? card.score : '—'}/100</b></div><div class="modal-metrics"><div><small>7-day change</small><b>${esc(fmtDelta(card.change7))}</b></div><div><small>30-day change</small><b>${esc(fmtDelta(card.change30))}</b></div><div><small>90-day change</small><b>${esc(fmtDelta(card.change90))}</b></div></div><div class="chart-wrap" id="detailChart" aria-live="polite"><p>Loading this card’s history…</p></div><div class="modal-comment"><b>Why this category:</b> ${esc(signalExplanation(card))}</div><div class="peer-panel"><h3>Compared with its set</h3><p>${peers.reliable ? `${esc(peers.count)} comparable cards · ${peers.setDeclining ? 'the set is declining' : 'no broad set decline detected'}` : card.peers ? `Insufficient suitable peers (${esc(peers.count || 0)} available). This comparison is not reliable.` : 'Loading the full set comparison…'}</p><dl><div><dt>Peer median · 30 days</dt><dd>${esc(fmtDelta(peers.median30))}</dd></div><div><dt>Peer median · 90 days</dt><dd>${esc(fmtDelta(peers.median90))}</dd></div><div><dt>Card vs. peers · 30 days</dt><dd>${Number.isFinite(peers.relative30) ? `${esc(peers.relative30.toFixed(1))} pp` : 'Unavailable'}</dd></div><div><dt>Card vs. peers · 90 days</dt><dd>${Number.isFinite(peers.relative90) ? `${esc(peers.relative90.toFixed(1))} pp` : 'Unavailable'}</dd></div><div><dt>Broader set · 30-day median</dt><dd>${esc(fmtDelta(peers.setMedian30))}</dd></div><div><dt>Broader set · 90-day median</dt><dd>${esc(fmtDelta(peers.setMedian90))}</dd></div><div><dt>90-day average price</dt><dd>${esc(fmtMoney(card.average90))}</dd></div><div><dt>Current vs. 90-day average</dt><dd>${Number.isFinite(card.belowAverage90) ? card.belowAverage90 === 0 ? 'At average' : `${esc(Math.abs(card.belowAverage90).toFixed(1))}% ${card.belowAverage90 < 0 ? 'below' : 'above'}` : 'Unavailable'}</dd></div><div><dt>Below recent 90-day high</dt><dd>${esc(fmtDelta(card.drop90))}</dd></div><div><dt>Comparable price rank</dt><dd>${Number.isFinite(peers.priceRank) && Number.isFinite(peers.rankTotal) ? `${esc(peers.priceRank)} of ${esc(peers.rankTotal)}` : 'Unavailable'}</dd></div></dl><p class="modal-caption">${Number.isFinite(peers.setCount) ? `Broader-set medians cover ${esc(peers.setCount)} other cards with usable history. ` : ''}Rank describes current price only; 1 is the highest price. It does not measure scarcity or predict returns.</p></div><div class="risk-panel"><b>Main risk</b><p>${esc(card.risk || 'Loading the full risk analysis. Market averages do not guarantee an available Near Mint offer.')}</p></div>${warnings.length ? `<p class="modal-caption data-warnings"><b>Data checks:</b> ${warnings.map(esc).join(' · ')}</p>` : ''}<div class="entry-panel"><span>Suggested entry / watch threshold</span><strong>${esc(fmtMoney(card.entryPrice))}</strong><small>A screening threshold, not a predicted future price.</small></div><dl class="data-availability"><div><dt>Sales volume</dt><dd>Unavailable</dd></div><div><dt>Near Mint listing quality</dt><dd>Unavailable</dd></div><div><dt>Historical observations</dt><dd>${Number.isFinite(card.historyObservations) ? esc(card.historyObservations) : 'Unavailable'}</dd></div></dl><p class="modal-caption">Scores use age (25%), set-relative value (25%), correction (20%), momentum (15%), collector popularity (10%), and liquidity (5%). Popularity is an editorial proxy. Missing liquidity contributes no evidence. Older cards cannot qualify on age alone. The provisional Buy Now threshold is ${Number.isFinite(state.snapshot?.buyThreshold) ? state.snapshot.buyThreshold : 80}; historical results do not establish predictive accuracy. Provider history begins in February 2024, including for older cards.</p><div class="modal-cta"><a href="${esc(tcgLink(card))}" target="_blank" rel="noopener noreferrer">Check actual Near Mint listings ↗</a>${source ? `<a class="secondary" href="${esc(source)}" target="_blank" rel="noopener noreferrer">TickerMint price source ↗</a>` : ''}</div><p class="modal-caption">Confirm the exact printing, English language, raw condition, shipping and fees. The market average is not a verified Near Mint offer.</p>`;
+}
+async function detail(card) {
+  modal(detailHtml(card)); state.modalCard = card._key;
+  function renderDetail(record) {
+    if (state.modalCard !== card._key) return;
+    // Apply the same freshness gate to cached detail files as to the lightweight list.
+    const full = prepareCard({...card, ...record});
+    $('modalBody').innerHTML = detailHtml(full);
+    $('detailChart').innerHTML = chart(record.history);
   }
-  persist();scheduleDraw();setStatus('ready',`${state.catalog.filter(c=>observed(enrich(c))).length} priced`);
-  const covered=state.coverage?.universe?`${state.coverage.catalogued.toLocaleString()} / ${state.coverage.universe.toLocaleString()} cards reviewed for rarity`:'Catalog scan begins after publication';
-  syncProgress(2,2,'Latest saved market snapshot loaded',`${covered} · New prices publish from the daily GitHub Action.`);
-  $('syncDate').textContent=snapshot.updatedAt?`Price file refreshed ${new Date(snapshot.updatedAt).toLocaleString()}`:'No live price snapshot published yet';
-  if(force)toast('Checked newest published data. GitHub updates the source daily.');
- }catch(e){setStatus('error','Cached');$('syncTitle').textContent='Showing saved card data';$('syncDescription').textContent='The published data could not be reached. Existing cached information remains available. '+e.message;toast('No new snapshot available; using cached data.');}
- finally{state.updating=false;$('refreshBtn').classList.remove('busy');$('retryBtn').disabled=false;scheduleDraw()}
+  if (state.details.has(card.id)) { renderDetail(state.details.get(card.id)); return; }
+  try {
+    const record = await fetchJSON(`details/${encodeURIComponent(card.id)}.json`);
+    state.details.set(card.id, record);
+    renderDetail(record);
+  } catch {
+    if (state.modalCard === card._key && $('detailChart')) $('detailChart').innerHTML = '<p>Detailed history is unavailable right now. The published summary above remains available.</p>';
+  }
 }
-function chart(series){if(!Array.isArray(series)||series.length<3)return '<p>Historical chart becomes available when price history is verified.</p>';const rows=series.filter(p=>Array.isArray(p)&&Number.isFinite(p[1])).slice(-90);if(rows.length<3)return '<p>Not enough historical observations yet.</p>';const prices=rows.map(x=>x[1]),min=Math.min(...prices),max=Math.max(...prices),range=max-min||1;const coords=prices.map((v,i)=>[15+i*595/(prices.length-1),148-110*(v-min)/range]);const path=coords.map(([x,y],i)=>`${i?'L':'M'}${x.toFixed(2)} ${y.toFixed(2)}`).join(' ');const area=path+` L${coords.at(-1)[0].toFixed(2)} 152 L15 152 Z`;return `<svg viewBox="0 0 640 190" preserveAspectRatio="none" role="img" aria-label="Last ${rows.length} observed prices"><defs><linearGradient id="chartFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#87e7ce" stop-opacity=".28"/><stop offset="1" stop-color="#87e7ce" stop-opacity="0"/></linearGradient></defs><path d="M15 38 H610 M15 95 H610 M15 152 H610" stroke="#33546a" fill="none" stroke-dasharray="4 5"/><path d="${area}" fill="url(#chartFill)"/><path d="${path}" fill="none" stroke="#a4ecd1" stroke-width="3" stroke-linejoin="round"/><circle cx="${coords.at(-1)[0]}" cy="${coords.at(-1)[1]}" r="4" fill="#d1ffe4"/><text x="7" y="19" font-size="11" fill="#a9c9c9">${esc(fmtMoney(max))}</text><text x="7" y="176" font-size="11" fill="#a9c9c9">${esc(fmtMoney(min))}</text><text x="610" y="176" text-anchor="end" font-size="10" fill="#a9c9c9">${esc(rows.at(-1)[0])}</text></svg>`}
-function modal(html){$('modalBody').innerHTML=html;$('modalOverlay').hidden=false;document.body.style.overflow='hidden';$('closeModal').focus()}
-function closeModal(){$('modalOverlay').hidden=true;document.body.style.overflow=''}
-function detail(c){const link=tcgLink(c),img=validHttps(c.image);const price=observed(c)?fmtMoney(c.price):'Price pending';const mint=validHttps(c.tickermintUrl);
- modal(`<div class="modal-intro">${img?`<img src="${esc(img)}" alt="${esc(c.name)} artwork" loading="lazy">`:'<div class="card-placeholder">◈</div>'}<div><div class="rarity">${esc(c.rarity)}</div><h2 id="modalHeading">${esc(c.name)}</h2><div class="set">${esc(c.set)} · ${esc(c.number)} · ${c.year}</div><div class="modal-price">${price}</div><div class="modal-caption">${esc(c.asOf||'No verified market date')} · Raw market average</div></div></div><div class="modal-metrics"><div><small>7D movement</small><b>${fmtDelta(c.change7)}</b></div><div><small>30D movement</small><b>${fmtDelta(c.change30)}</b></div><div><small>90D pullback</small><b>${fmtDelta(c.drop90)}</b></div></div><div class="chart-wrap">${chart(c.history)}</div><div class="modal-comment"><b>${esc(c.signal.toUpperCase())} · Why:</b> ${esc(c.reason)}</div><p class="modal-caption"><b>Fan appeal:</b> ${c.hype}/100 is a subjective popularity estimate, not a measured search or sales index. <b>Opportunity score:</b> ${c.score===null?'Not available':c.score+'/100'} (heuristic, not backtested). Historical observations may start in 2024 even for older sets.</p><div class="modal-cta"><a href="${esc(link)}" target="_blank" rel="noopener noreferrer">Check on TCGplayer ↗</a>${mint?`<a class="secondary" href="${esc(mint)}" target="_blank" rel="noopener noreferrer">Price source: TickerMint ↗</a>`:''}</div><p class="modal-caption">The price source does not confirm Near Mint condition or that a listing can be bought for this amount. Check the exact printing and final delivered price before purchasing.</p>`)}
-function method(){modal(`<div class="modal-method"><div class="section-kicker">HOW THE SCANNER WORKS</div><h2 id="modalHeading">Older cards get priority.</h2><p>PokéRadar continuously discovers English cards from 2008 onward, rather than relying on a fixed 153-card list. Eligible rarities include IR, SIR, alternate art, Gallery, and older secret/ultra/legend/prime/LV.X rarities. The initial catalog may be incomplete while background discovery processes the remaining sets.</p><ol><li><b>BUY NOW:</b> ≥18% below the rolling 90-day high, at least 7% lower over 30 days, with the last 7 days relatively stable and high collector appeal.</li><li><b>WAIT:</b> significant recent correction but the price is still declining.</li><li><b>WATCH:</b> other verified cards under $100 without a clear entry signal.</li><li><b>Price pending:</b> the card is not yet matched or lacks sufficient, recent history. Unknown prices are never treated as $0.</li><li><b>Vintage priority:</b> age contributes <b>28%</b> of the opportunity score (previously 10%); you can also sort by oldest.</li><li><b>Popularity:</b> fan appeal is an editorial proxy, not search volume, social analytics, or actual sales activity.</li><li><b>Daily updates:</b> GitHub Actions checks in the cloud, publishes a new snapshot, and progressively catalogs older sets. Tapping Refresh downloads the latest published data immediately.</li></ol><p>Pricing is TCGplayer-derived from <a href="https://tickermint.cards/developers" target="_blank" rel="noopener noreferrer">TickerMint ↗</a>. Its historical series starts in February 2024, even for 2008 cards. Market price is <b>not a verified Near Mint offer</b>. Scores are heuristics, not price forecasts.</p></div>`)}
-function installInstructions(){modal(`<div class="modal-method"><h2 id="modalHeading">Add PokéRadar to your home screen</h2><p><b>iPhone (Safari):</b> Open your published PokéRadar URL, tap <b>Share</b>, and choose <b>Add to Home Screen</b>.</p><p><b>Android (Chrome):</b> Open the same URL, tap the browser menu <b>⋮</b>, then choose <b>Install app</b> or <b>Add to Home screen</b>.</p><p>When installed, it opens like an app. Your interface stays cached after the first visit, and the latest price snapshot is refreshed from GitHub Pages when you reconnect.</p></div>`)}
-function bind(){
- $('tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(!b)return;state.tab=b.dataset.tab;state.limit=18;scheduleDraw()});
- $('search').addEventListener('input',e=>{state.query=e.target.value.trim();state.limit=18;scheduleDraw()});
- $('rarity').addEventListener('change',e=>{state.rarity=e.target.value;state.limit=18;scheduleDraw()});
- $('sort').addEventListener('change',e=>{state.sort=e.target.value;scheduleDraw()});
- $('moreBtn').addEventListener('click',()=>{state.limit+=18;scheduleDraw()});
- $('cardList').addEventListener('click',e=>{const save=e.target.closest('[data-save]');if(save){const key=save.dataset.save;state.saved.has(key)?state.saved.delete(key):state.saved.add(key);persist();scheduleDraw();return}const detailBtn=e.target.closest('[data-detail]');if(detailBtn){const card=state.catalog.find(x=>x.key===detailBtn.dataset.detail);if(card)detail(enrich(card))}});
- $('howBtn').addEventListener('click',method);$('installHelp').addEventListener('click',installInstructions);
- $('closeModal').addEventListener('click',closeModal);$('modalOverlay').addEventListener('click',e=>{if(e.target===$('modalOverlay'))closeModal()});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
- $('refreshBtn').addEventListener('click',()=>runSync(true));$('retryBtn').addEventListener('click',()=>runSync(true));
- $('resetFilters').addEventListener('click',()=>{state.tab='all';state.query='';state.rarity='all';state.sort='oldest';state.limit=18;$('search').value='';$('rarity').value='all';$('sort').value='oldest';scheduleDraw()});
+function method() {
+  modal(`<div class="modal-method"><div class="section-kicker">HOW THE SCANNER WORKS</div><h2 id="modalHeading">Older cards. Stronger evidence.</h2><p>The cloud updater discovers eligible English chase rarities from 2008 onward and publishes verified market prices and precomputed comparisons. Known prices of $100 or more are excluded. Cards with unknown prices remain visible as insufficient data.</p><ol><li><b>BUY NOW:</b> a provisional score of at least ${Number.isFinite(state.snapshot?.buyThreshold) ? state.snapshot.buyThreshold : 80} plus verified recent prices, sufficient history and reliable set peers, a meaningful correction, attractive relative value and stabilization. Age alone cannot qualify a card.</li><li><b>WAIT TO BUY:</b> a potential opportunity whose price is still falling or whose momentum remains weak.</li><li><b>WATCHLIST:</b> a card with usable evidence that does not meet the buying criteria.</li><li><b>INSUFFICIENT DATA:</b> missing or stale prices, unresolved matching, too little history or too few comparable cards. Unknown prices are never $0.</li></ol><p><b>Opportunity Score:</b> age 25%, set-relative value 25%, historical correction 20%, stabilization and momentum 15%, editorial collector popularity 10%, liquidity 5%. The age scores are 100 for 2008–2012, 85 for 2013–2016, 70 for 2017–2019, 50 for 2020–2022, 30 for 2023–2024 and 15 for 2025 onward.</p><p>Peers are drawn from the same set with compatible rarities or price ranges. Median changes reduce the influence of extreme prices. Missing liquidity and listing data are explicitly unavailable. Scores are research screens, not return forecasts. The threshold remains provisional until enough historical out-of-sample evidence exists.</p><p><b>Fast on iPhone:</b> a compact summary opens from browser storage, then refreshes in the background. Only 18 cards render at once. Full histories load when you open a card. Refresh retrieves the latest published snapshot; daily provider checks run through GitHub Actions.</p><p><a href="evaluation.html">View the historical evaluation and failed signals ↗</a>.</p><p>Pricing is <a href="https://tickermint.cards/developers" target="_blank" rel="noopener noreferrer">TickerMint’s TCGplayer-derived data ↗</a>. Available history begins in February 2024; a card’s original release date does not extend its recorded price history.</p></div>`);
 }
-async function start(){readStore();bind();try{const r=await fetch('catalog.json',{cache:'force-cache'});if(!r.ok)throw Error('Roster unavailable');const d=await r.json();if(!Array.isArray(d.cards))throw Error('Invalid roster');state.catalog=d.cards;state.total=d.cards.length;scheduleDraw();const n=state.catalog.filter(c=>observed(enrich(c))).length;setStatus('',`${n} cached`);syncProgress(0,1,'Cards are ready',n?`${n} saved prices visible. Checking current market prices…`:'Your card list is ready. Verifying prices for the first time…');
-  runSync(false);
- }catch(e){setStatus('error','Offline');syncProgress(0,1,'Could not open the card catalog','Reopen the app with an internet connection. '+e.message)}
- if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceWorker.register('sw.js').catch(()=>{});
+function installInstructions() {
+  modal('<div class="modal-method"><h2 id="modalHeading">Add PokéRadar to your home screen</h2><p><b>iPhone (Safari):</b> Tap <b>Share</b>, then <b>Add to Home Screen</b>.</p><p><b>Android (Chrome):</b> Open the browser menu and select <b>Install app</b> or <b>Add to Home screen</b>.</p><p>The last published catalog and verified prices remain saved after your first visit. Reconnect and tap Refresh for the latest snapshot.</p></div>');
+}
+function setTab(button) { state.tab = button.dataset.tab; state.page = 0; scheduleDraw(); }
+function bind() {
+  document.addEventListener('error', event => {
+    const image = event.target;
+    if (!(image instanceof HTMLImageElement) || (!image.classList.contains('card-image') && !image.closest('.modal-intro'))) return;
+    const placeholder = document.createElement('div');
+    placeholder.className = 'card-placeholder'; placeholder.textContent = '◈';
+    placeholder.setAttribute('role', 'img'); placeholder.setAttribute('aria-label', 'Card artwork unavailable');
+    image.replaceWith(placeholder);
+  }, true);
+  $('tabs').addEventListener('click', event => { const button = event.target.closest('[data-tab]'); if (button) setTab(button); });
+  $('tabs').addEventListener('keydown', event => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const tabs = [...$('tabs').querySelectorAll('[data-tab]')]; const active = tabs.indexOf(document.activeElement);
+    if (active < 0) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (active + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+    setTab(tabs[next]); tabs[next].focus();
+  });
+  let searchTimer;
+  $('search').addEventListener('input', event => { const query = event.target.value.trim().toLowerCase(); clearTimeout(searchTimer); searchTimer = setTimeout(() => { state.query = query; state.page = 0; scheduleDraw(); }, 100); });
+  for (const key of ['rarity', 'sort']) $(key).addEventListener('change', event => { state[key] = event.target.value; state.page = 0; scheduleDraw(); });
+  function page(direction) { state.page = Math.max(0, state.page + direction); draw(); $('board').scrollIntoView({behavior: 'auto', block: 'start'}); }
+  $('moreBtn').addEventListener('click', () => page(1)); $('prevBtn').addEventListener('click', () => page(-1));
+  $('cardList').addEventListener('click', event => {
+    const save = event.target.closest('[data-save]');
+    if (save) {
+      const key = save.dataset.save; const saved = !state.saved.has(key);
+      if (saved) state.saved.add(key); else state.saved.delete(key);
+      persistSaved(); updateSavedCount();
+      if (state.tab === 'saved') { state.filterKey = ''; scheduleDraw(); }
+      else { save.classList.toggle('active', saved); save.textContent = saved ? '★' : '☆'; save.setAttribute('aria-pressed', String(saved)); const card = state.cards.find(row => row._key === key); save.setAttribute('aria-label', `${saved ? 'Unsave' : 'Save'} ${card?.name || 'card'}`); }
+      return;
+    }
+    const button = event.target.closest('[data-detail]');
+    if (button) { const card = state.cards.find(row => row._key === button.dataset.detail); if (card) detail(card); }
+  });
+  $('howBtn').addEventListener('click', method); $('installHelp').addEventListener('click', installInstructions);
+  $('closeModal').addEventListener('click', closeModal); $('modalOverlay').addEventListener('click', event => { if (event.target === $('modalOverlay')) closeModal(); });
+  document.addEventListener('keydown', event => {
+    if ($('modalOverlay').hidden) return;
+    if (event.key === 'Escape') closeModal();
+    if (event.key === 'Tab') {
+      const items = [...$('modalOverlay').querySelectorAll('button, a[href], input, select, [tabindex="0"]')].filter(item => !item.disabled);
+      if (event.shiftKey && document.activeElement === items[0]) { event.preventDefault(); items.at(-1).focus(); }
+      else if (!event.shiftKey && document.activeElement === items.at(-1)) { event.preventDefault(); items[0].focus(); }
+    }
+  });
+  $('refreshBtn').addEventListener('click', () => runSync(true)); $('retryBtn').addEventListener('click', () => runSync(true));
+  $('resetFilters').addEventListener('click', () => { clearTimeout(searchTimer); state.tab = 'all'; state.query = ''; state.rarity = 'all'; state.sort = 'score'; state.page = 0; $('search').value = ''; $('rarity').value = 'all'; $('sort').value = 'score'; scheduleDraw(); });
+}
+function start() {
+  bind(); readStore();
+  if (!state.snapshot) draw();
+  // Let cached cards paint before starting the network request.
+  requestAnimationFrame(() => { setTimeout(() => runSync(), 0); });
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js', {updateViaCache: 'none'}).catch(() => {});
 }
 start();

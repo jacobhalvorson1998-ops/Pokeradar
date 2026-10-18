@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#071321">
-  <meta name="description" content="PokéRadar mobile: scout English Pokémon chase-card prices, monitor price corrections, and follow TCGplayer listings.">
+  <meta name="description" content="Discover English Pokémon chase cards from 2008 onward with verified prices, set comparisons, and careful buying signals.">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="PokéRadar">
@@ -12,48 +12,57 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="icon" type="image/png" href="icon-192.png">
-  <link rel="stylesheet" href="styles.css">
-  <script src="app.js" defer></script>
-  <title>PokéRadar · Mobile Card Scanner</title>
+  <link rel="stylesheet" href="styles.css?v=4">
+  <script src="app.js?v=4" defer></script>
+  <title>PokéRadar · Pokémon Card Opportunities</title>
 </head>
 <body>
+<a class="skip-link" href="#board">Skip to cards</a>
 <div class="app-shell">
   <header class="topbar">
     <a class="logo" href="./" aria-label="PokéRadar home"><span class="brand-icon" aria-hidden="true"><i></i></span><span>poké<b>radar</b><small>CARD MARKET SCANNER</small></span></a>
-    <div class="top-actions"><span class="connection" id="connection"><span class="indicator"></span><span id="connectionText">Opening</span></span><button class="refresh" id="refreshBtn" type="button" title="Check the newest prices" aria-label="Refresh prices"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11a9 9 0 1 0-3 7M21 3v8h-8"/></svg></button></div>
+    <div class="top-actions"><span class="connection" id="connection"><span class="indicator"></span><span id="connectionText">Opening</span></span><button class="refresh" id="refreshBtn" type="button" title="Retrieve the latest published snapshot" aria-label="Refresh snapshot"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11a9 9 0 1 0-3 7M21 3v8h-8"/></svg></button></div>
   </header>
   <main>
     <section class="hero">
-      <div class="eyebrow"><span class="eyebrow-pulse"></span> YOUR POKÉMON MARKET EDGE <span class="eyebrow-sep">/</span> 2008—NOW</div>
-      <h1>Find the dip.<br><em>Catch the upside.</em></h1>
-      <p>Spot price drops on the cards collectors actually want. Vintage-first rankings, smarter watchlists, and direct TCGplayer access.</p>
-      <div class="hero-footer"><span class="pill">RAW CARDS</span><span class="pill">UNDER $100</span><span class="pill">DAILY PRICE CHECK</span></div>
+      <div class="eyebrow"><span class="eyebrow-pulse"></span> OLDER CARDS. BETTER EVIDENCE. <span class="eyebrow-sep">/</span> 2008—NOW</div>
+      <h1>Find overlooked cards.<br><em>Follow the evidence.</em></h1>
+      <p>Explore older chase cards, compare prices within each set, and wait for stronger buying signals. Verified data first.</p>
+      <div class="hero-footer"><span class="pill">ENGLISH RAW CARDS</span><span class="pill">UNDER $100</span><span class="pill">DAILY UPDATES</span></div>
       <div class="hero-decoration" aria-hidden="true"><span class="ring ring1"></span><span class="ring ring2"></span><span class="pokeball"><i></i></span></div>
     </section>
-    <section class="quick-stats" aria-label="Market overview">
-      <article><span>Under $100</span><strong id="statEligible">—</strong><small>Verified and recent</small></article>
-      <article><span>Buy signals</span><strong id="statBuy">—</strong><small>Drop + stabilization</small></article>
-      <article><span>Still falling</span><strong id="statWait">—</strong><small>Wait before buying</small></article>
-      <article><span>Biggest 30D dip</span><strong id="statDip">—</strong><small id="statDipName">Awaiting market data</small></article>
+    <section class="quick-stats" aria-label="Catalog and data coverage">
+      <article><span>Cards reviewed</span><strong id="statReviewed">—</strong><small id="statUniverse">Checking discovery progress</small></article>
+      <article><span>Eligible cards found</span><strong id="statEligible">—</strong><small>Collectible chase rarities</small></article>
+      <article><span>Verified prices</span><strong id="statVerified">—</strong><small>Exact card matches</small></article>
+      <article><span>Enough price history</span><strong id="statHistory">—</strong><small>Peers and risk gates still apply</small></article>
     </section>
     <section class="sync-panel" id="syncPanel" aria-live="polite">
-      <div class="sync-top"><span class="sync-icon" id="syncIcon">↻</span><div class="sync-copy"><strong id="syncTitle">Getting your cards ready</strong><span id="syncDescription">Cards load immediately. The first market scan happens in the background.</span></div><span id="syncPercent" class="sync-percent">0%</span></div>
-      <div class="progress-track"><span id="syncProgress" style="width:0%"></span></div>
-      <div class="sync-bottom"><span id="syncDate">No verified market snapshot yet</span><button type="button" class="text-link" id="retryBtn">Scan now →</button></div>
+      <div class="sync-top"><span class="sync-icon" aria-hidden="true">◷</span><div class="sync-copy"><strong id="syncTitle">Opening the published snapshot</strong><span id="syncDescription">Saved cards and prices appear immediately after your first visit. Daily updates run in the cloud.</span></div></div>
+      <div class="sync-bottom"><span id="syncDate">Last updated: awaiting snapshot</span><button type="button" class="text-link" id="retryBtn">Refresh snapshot →</button></div>
     </section>
-    <section class="board" id="board">
-      <div class="section-heading"><div><div class="section-kicker">01 / OPPORTUNITY SCANNER</div><h2>Market watch <span aria-hidden="true">✳</span></h2><p id="resultsLabel">Expanding catalog from 2008 onward · prices never estimated</p></div><button class="help-link" id="howBtn" type="button">How it works <span>↗</span></button></div>
-      <div class="tabs" role="tablist" aria-label="Filter cards by signal" id="tabs"><button type="button" class="active" data-tab="all" role="tab" aria-selected="true">All cards <span id="allN">0</span></button><button type="button" data-tab="buy" role="tab" aria-selected="false"><i class="dot positive"></i> Buy now <span id="buyN">0</span></button><button type="button" data-tab="wait" role="tab" aria-selected="false"><i class="dot caution"></i> Wait <span id="waitN">0</span></button><button type="button" data-tab="watch" role="tab" aria-selected="false">Watch <span id="watchN">0</span></button><button type="button" data-tab="saved" role="tab" aria-selected="false">★ Saved <span id="savedN">0</span></button></div>
-      <div class="filters"><label class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg><input id="search" type="search" placeholder="Search Pokémon, set, card number" aria-label="Search cards" autocomplete="off"></label><div class="filter-selects"><label><span>RARITY</span><select id="rarity"><option value="all">All rarities</option><option value="IR">Illustration Rare</option><option value="SIR">Special Illustration Rare</option><option value="Alt Art">Alternate Art</option><option value="Galarian Gallery">Galarian / Trainer Gallery</option><option value="Other">Other chase cards</option></select></label><label><span>SORT BY</span><select id="sort"><option value="oldest" selected>Oldest cards first</option><option value="score">Best opportunity</option><option value="dip">Biggest 30D dip</option><option value="hype">Most popular</option><option value="price">Price: low to high</option><option value="newest">Newest sets</option><option value="alpha">Name A to Z</option></select></label></div></div>
-      <div class="list-heading"><span id="showingCount">Loading roster…</span><span class="inline-dot"></span><span>Tap any card for its chart</span></div>
+    <section class="board" id="board" tabindex="-1">
+      <div class="section-heading"><div><div class="section-kicker">01 / OPPORTUNITY SCANNER</div><h2>Market watch <span aria-hidden="true">✳</span></h2><p id="resultsLabel">English raw chase cards · 2008 onward · known prices under $100</p></div><button class="help-link" id="howBtn" type="button">How it works ↗</button></div>
+      <div class="tabs" role="tablist" aria-label="Filter cards by signal" id="tabs">
+        <button type="button" class="active" data-tab="all" role="tab" aria-selected="true">All cards <span id="allN">0</span></button>
+        <button type="button" data-tab="buy" role="tab" aria-selected="false" tabindex="-1"><i class="dot positive" aria-hidden="true"></i> Buy now <span id="buyN">0</span></button>
+        <button type="button" data-tab="wait" role="tab" aria-selected="false" tabindex="-1"><i class="dot caution" aria-hidden="true"></i> Wait to buy <span id="waitN">0</span></button>
+        <button type="button" data-tab="watch" role="tab" aria-selected="false" tabindex="-1">Watchlist <span id="watchN">0</span></button>
+        <button type="button" data-tab="pending" role="tab" aria-selected="false" tabindex="-1">Insufficient data <span id="pendingN">0</span></button>
+        <button type="button" data-tab="saved" role="tab" aria-selected="false" tabindex="-1">★ Saved <span id="savedN">0</span></button>
+      </div>
+      <div class="filters"><label class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg><input id="search" type="search" placeholder="Search Pokémon, set, card number" aria-label="Search cards" autocomplete="off"></label><div class="filter-selects"><label><span>RARITY</span><select id="rarity"><option value="all">All rarities</option><option value="IR">Illustration Rare</option><option value="SIR">Special Illustration Rare</option><option value="Alt Art">Alternate Art</option><option value="Galarian Gallery">Galarian / Trainer Gallery</option><option value="Other">Other chase cards</option></select></label><label><span>SORT BY</span><select id="sort"><option value="score" selected>Best opportunity</option><option value="oldest">Oldest cards first</option><option value="dip">Biggest 30D decline</option><option value="price">Price: low to high</option><option value="newest">Newest sets</option><option value="alpha">Name A to Z</option></select></label></div></div>
+      <div class="list-heading"><span id="showingCount">Loading catalog…</span><span class="inline-dot" aria-hidden="true"></span><span>Open a card for history &amp; risks</span></div>
       <div id="cardList" class="card-list" aria-live="polite"></div>
-      <div id="empty" class="empty" hidden><div class="empty-art">◎</div><h3>No cards match yet</h3><p>Try a different filter or scan again after prices are available.</p><button id="resetFilters" type="button">Reset filters</button></div>
-      <button id="moreBtn" type="button" class="more-btn" hidden>Show more cards <span>↓</span></button>
+      <div id="empty" class="empty" hidden><div class="empty-art" aria-hidden="true">◎</div><h3>No cards in this view</h3><p>Try another filter. Buy Now stays empty until cards meet the evidence and quality gates.</p><button id="resetFilters" type="button">Reset filters</button></div>
+      <nav class="pagination" id="pagination" aria-label="Card list pages" hidden><button id="prevBtn" type="button" disabled>← Previous</button><span id="pageLabel" aria-live="polite">Page 1</span><button id="moreBtn" type="button">Next 18 →</button></nav>
     </section>
-    <section class="note"><span>i</span><p>Prices are TCGplayer-derived raw-market averages, <b>not verified Near Mint listings</b>. A “Buy Now” label is a rule-based screen, not a forecast. Confirm printing, condition, shipping and fees on TCGplayer before purchasing.</p></section>
+    <section class="note"><span aria-hidden="true">i</span><p>Prices are TCGplayer-derived raw-market averages, <b>not verified Near Mint listings</b>. Buy Now uses provisional research rules, not a return forecast. Confirm the exact printing, condition, shipping and fees before purchasing. <a href="evaluation.html">View historical evaluation ↗</a></p></section>
+    <noscript><p>Enable JavaScript to search the published card snapshot. <a href="summary.json">Download the current summary</a>.</p></noscript>
   </main>
-  <footer><a href="https://tickermint.cards/developers" target="_blank" rel="noopener noreferrer">Prices via TickerMint ↗</a><span>·</span><span>Independent hobby project</span><span>·</span><button type="button" id="installHelp">Add to home screen</button></footer>
+  <footer><a href="https://tickermint.cards/developers" target="_blank" rel="noopener noreferrer">Prices via TickerMint ↗</a><span>·</span><a href="https://tcgdex.net" target="_blank" rel="noopener noreferrer">Catalog &amp; art via TCGdex ↗</a><span>·</span><a href="evaluation.html">Historical evaluation</a><span>·</span><button type="button" id="installHelp">Add to home screen</button></footer>
 </div>
 <div class="modal-overlay" id="modalOverlay" hidden><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalHeading"><div class="modal-bar"><span class="modal-label">POKÉRADAR / CARD INSIGHTS</span><button id="closeModal" type="button" aria-label="Close details">✕</button></div><div id="modalBody"></div></div></div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-</body></html>
+</body>
+</html>

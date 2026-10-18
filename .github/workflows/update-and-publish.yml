@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths-ignore: ['site/catalog.json', 'site/prices.json', 'data/**']
+    paths: ['scripts/**', 'tests/**', '.github/workflows/update-and-publish.yml']
 permissions:
   contents: write
 concurrency:
@@ -14,9 +14,10 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 35
     steps:
       - name: Checkout
+        id: checkout
         uses: actions/checkout@v4
         with:
           ref: main
@@ -24,23 +25,45 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Restore evaluation histories
+        id: historycache
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/pokeradar/full-history.json
+          key: pokeradar-history-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            pokeradar-history-${{ runner.os }}-
       - name: Validate updater and app
         run: |
-          node --test tests/sync.test.mjs
+          node --test tests/*.test.mjs
           node --check site/app.js
       - name: Run catalog and market updater
         run: node scripts/sync.mjs
         env:
-          MAX_DETAILS_PER_RUN: '650'
-          MAX_RESOLVE_PER_RUN: '65'
-          MAX_HISTORY_PER_RUN: '65'
+          MAX_DETAILS_PER_RUN: '5000'
+          MAX_RESOLVE_PER_RUN: '5000'
+          MAX_HISTORY_PER_RUN: '2000'
+          SYNC_BUDGET_MS: '1500000'
+      - name: Evaluate historical signals
+        if: always() && steps.checkout.outcome == 'success'
+        run: node scripts/backtest.mjs
+      - name: Precompute mobile snapshot
+        if: always() && steps.checkout.outcome == 'success'
+        run: node scripts/build.mjs && node scripts/verify-site.mjs
       - name: Save progress for the next day
+        if: always() && steps.checkout.outcome == 'success'
         run: |
           git config user.name 'pokeradar-bot'
           git config user.email 'pokeradar-bot@users.noreply.github.com'
-          git add data site/catalog.json site/prices.json
+          git add data site
           if ! git diff --cached --quiet; then
             git commit -m 'Update card catalog and market snapshots'
             git pull --rebase origin main
             git push origin HEAD:main
           fi
+      - name: Retain evaluation history checkpoints
+        if: always() && hashFiles('.cache/pokeradar/full-history.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/pokeradar/full-history.json
+          key: ${{ steps.historycache.outputs.cache-primary-key }}
