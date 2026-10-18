@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#071321">
-  <meta name="description" content="Discover English Pokémon chase cards from 2008 onward with verified prices, set comparisons, and careful buying signals.">
+  <meta name="description" content="Discover English Pokémon chase cards from the earliest English sets onward with verified prices, set comparisons, and careful buying signals.">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="PokéRadar">
@@ -12,8 +12,8 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="icon" type="image/png" href="icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=4">
-  <script src="app.js?v=4" defer></script>
+  <link rel="stylesheet" href="styles.css?v=5">
+  <script src="app.js?v=5" defer></script>
   <title>PokéRadar · Pokémon Card Opportunities</title>
 </head>
 <body>
@@ -25,10 +25,10 @@
   </header>
   <main>
     <section class="hero">
-      <div class="eyebrow"><span class="eyebrow-pulse"></span> OLDER CARDS. BETTER EVIDENCE. <span class="eyebrow-sep">/</span> 2008—NOW</div>
+      <div class="eyebrow"><span class="eyebrow-pulse"></span> OLDER CARDS. BETTER EVIDENCE. <span class="eyebrow-sep">/</span> ALL ERAS</div>
       <h1>Find overlooked cards.<br><em>Follow the evidence.</em></h1>
       <p>Explore older chase cards, compare prices within each set, and wait for stronger buying signals. Verified data first.</p>
-      <div class="hero-footer"><span class="pill">ENGLISH RAW CARDS</span><span class="pill">UNDER $100</span><span class="pill">DAILY UPDATES</span></div>
+      <div class="hero-footer"><span class="pill">ENGLISH RAW CARDS</span><span class="pill">CUSTOM PRICE RANGES</span><span class="pill">DAILY UPDATES</span></div>
       <div class="hero-decoration" aria-hidden="true"><span class="ring ring1"></span><span class="ring ring2"></span><span class="pokeball"><i></i></span></div>
     </section>
     <section class="quick-stats" aria-label="Catalog and data coverage">
@@ -42,7 +42,7 @@
       <div class="sync-bottom"><span id="syncDate">Last updated: awaiting snapshot</span><button type="button" class="text-link" id="retryBtn">Refresh snapshot →</button></div>
     </section>
     <section class="board" id="board" tabindex="-1">
-      <div class="section-heading"><div><div class="section-kicker">01 / OPPORTUNITY SCANNER</div><h2>Market watch <span aria-hidden="true">✳</span></h2><p id="resultsLabel">English raw chase cards · 2008 onward · known prices under $100</p></div><button class="help-link" id="howBtn" type="button">How it works ↗</button></div>
+      <div class="section-heading"><div><div class="section-kicker">01 / OPPORTUNITY SCANNER</div><h2>Market watch <span aria-hidden="true">✳</span></h2><p id="resultsLabel">English Pokémon cards · every era · all prices</p></div><button class="help-link" id="howBtn" type="button">How it works ↗</button></div>
       <div class="tabs" role="tablist" aria-label="Filter cards by signal" id="tabs">
         <button type="button" class="active" data-tab="all" role="tab" aria-selected="true">All cards <span id="allN">0</span></button>
         <button type="button" data-tab="buy" role="tab" aria-selected="false" tabindex="-1"><i class="dot positive" aria-hidden="true"></i> Buy now <span id="buyN">0</span></button>
@@ -51,7 +51,16 @@
         <button type="button" data-tab="pending" role="tab" aria-selected="false" tabindex="-1">Insufficient data <span id="pendingN">0</span></button>
         <button type="button" data-tab="saved" role="tab" aria-selected="false" tabindex="-1">★ Saved <span id="savedN">0</span></button>
       </div>
-      <div class="filters"><label class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg><input id="search" type="search" placeholder="Search Pokémon, set, card number" aria-label="Search cards" autocomplete="off"></label><div class="filter-selects"><label><span>RARITY</span><select id="rarity"><option value="all">All rarities</option><option value="IR">Illustration Rare</option><option value="SIR">Special Illustration Rare</option><option value="Alt Art">Alternate Art</option><option value="Galarian Gallery">Galarian / Trainer Gallery</option><option value="Other">Other chase cards</option></select></label><label><span>SORT BY</span><select id="sort"><option value="score" selected>Best opportunity</option><option value="oldest">Oldest cards first</option><option value="dip">Biggest 30D decline</option><option value="price">Price: low to high</option><option value="newest">Newest sets</option><option value="alpha">Name A to Z</option></select></label></div></div>
+      <div class="filters"><label class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg><input id="search" type="search" placeholder="Search Pokémon, set, card number" aria-label="Search cards" autocomplete="off"></label><div class="filter-selects"><label><span>RARITY</span><select id="rarity"><option value="all">All rarities</option><option value="IR">Illustration Rare</option><option value="SIR">Special Illustration Rare</option><option value="Alt Art">Alternate Art</option><option value="Galarian Gallery">Galarian / Trainer Gallery</option><option value="Other">Other chase cards</option><option value="Standard">Common / Uncommon / Regular rare</option><option value="Unclassified">Rarity not yet verified</option></select></label><fieldset class="price-range"><legend>YOUR PRICE RANGE · USD</legend><div class="price-inputs">
+<label><span>MINIMUM $</span><input id="priceMin" type="number" inputmode="decimal" min="0" step="0.01" placeholder="No minimum" aria-label="Minimum card price"></label>
+<label><span>MAXIMUM $</span><input id="priceMax" type="number" inputmode="decimal" min="0" step="0.01" placeholder="No maximum" aria-label="Maximum card price"></label>
+</div><div class="price-presets" id="pricePresets" role="group" aria-label="Quick price ranges">
+<button type="button" data-price-preset="all" aria-pressed="true">All prices</button>
+<button type="button" data-price-preset="under25" aria-pressed="false">Under $25</button>
+<button type="button" data-price-preset="range25to100" aria-pressed="false">$25–$100</button>
+<button type="button" data-price-preset="range100to250" aria-pressed="false">$100–$250</button>
+<button type="button" data-price-preset="over250" aria-pressed="false">$250+</button>
+</div><small class="price-hint">Saved on your phone. Price filters hide cards without verified prices.</small></fieldset><label><span>SORT BY</span><select id="sort"><option value="score" selected>Best opportunity</option><option value="oldest">Oldest cards first</option><option value="dip">Biggest 30D decline</option><option value="price">Price: low to high</option><option value="newest">Newest sets</option><option value="alpha">Name A to Z</option></select></label></div></div>
       <div class="list-heading"><span id="showingCount">Loading catalog…</span><span class="inline-dot" aria-hidden="true"></span><span>Open a card for history &amp; risks</span></div>
       <div id="cardList" class="card-list" aria-live="polite"></div>
       <div id="empty" class="empty" hidden><div class="empty-art" aria-hidden="true">◎</div><h3>No cards in this view</h3><p>Try another filter. Buy Now stays empty until cards meet the evidence and quality gates.</p><button id="resetFilters" type="button">Reset filters</button></div>
