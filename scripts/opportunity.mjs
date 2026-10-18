@@ -42,7 +42,7 @@ export function median(values) {
  return sorted.length % 2 ? sorted[middle] : (sorted[middle-1]+sorted[middle])/2;
 }
 export function agePriority(year) {
- if (!Number.isInteger(year) || year < 2008) return 0;
+ if (!Number.isInteger(year) || year < 1996) return 0;
  return year <= 2012 ? 100 : year <= 2016 ? 85 : year <= 2019 ? 70 : year <= 2022 ? 50 : year <= 2024 ? 30 : 15;
 }
 
@@ -202,8 +202,6 @@ export function assessCatalog(cards, prices, {asOf=new Date(),buyThreshold=MODEL
   let signal='watch',reason='Monitor for stronger relative value and a better entry.',risk='Market estimates can differ from actual Near Mint listings; demand and liquidity are unmeasured.';
   if (qualityWarnings.length) {
    signal='pending';reason=qualityWarnings[0];risk='Missing or unreliable data prevents a trustworthy buying recommendation.';
-  } else if (row.price>=100) {
-   signal='over';reason='At or above the $100 raw-market budget.';
   } else if (meaningfulCorrection && relativeValue && stable && !falling && !peers.setDeclining && score>=buyThreshold) {
    signal='buy';
    reason=`${Math.abs(row.drop90).toFixed(1)}% below its 90-day high; ${Math.abs(peers.relative30).toFixed(1)} points weaker than comparable cards over 30 days, with a stable last week.`;
@@ -214,7 +212,7 @@ export function assessCatalog(cards, prices, {asOf=new Date(),buyThreshold=MODEL
   } else if (score>=buyThreshold && (!meaningfulCorrection || !relativeValue)) {
    reason='High preference score, but the required correction and peer-value gates are not both met.';
   }
-  const entryPrice = positive(row.price) ? rounded(Math.min(row.price,(row.average90??row.price)*0.9,99.99),2) : null;
+  const entryPrice = positive(row.price) ? rounded(Math.min(row.price,(row.average90??row.price)*0.9),2) : null;
   const {baseQualityWarnings,...compact} = card;
   return {...compact,signal,score,components,reason,risk,entryPrice,entryNote:signal==='wait'?'Watch threshold only; wait for stabilization before considering an entry.':'Watch threshold only; verify actual Near Mint listings and fees.',liquidity:'Unavailable',listings:'Unavailable',salesVolume:'Unavailable',modelVersion:MODEL_VERSION};
  });
