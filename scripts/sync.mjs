@@ -8,7 +8,6 @@ const ROOT = process.env.POKERADAR_ROOT || path.resolve(path.dirname(fileURLToPa
 const ROOT_URL = 'https://api.tcgdex.net/v2/en';
 const PRICE_URL = 'https://api.tickermint.cards';
 const CURRENT_YEAR = new Date().getUTCFullYear();
-const minYear = 2008;
 export const setKey = (name, number) => `${String(name).toLowerCase().trim()}|${String(number).toUpperCase().replace(/\s/g, '')}`;
 const read = (file, fallback) => { try { return JSON.parse(fs.readFileSync(path.join(ROOT, file), 'utf8')); } catch { return fallback; } };
 const write = (file, value) => atomicWriteJSON(path.join(ROOT, file), value);
@@ -35,7 +34,7 @@ export function classifyRarity(rarity,number='',setName='',year=2026){
  // a trustworthy rarity for classification; don't label all secret numbers IR.
  return null;
 }
-function fromBrief(card, set, rarity) {
+export function fromBrief(card, set, rarity) {
   const year = Number(String(set.releaseDate).slice(0, 4));
   const official = Number(set.cardCount?.official || set.cardCount?.printed || 0);
   const local = String(card.localId || '');
@@ -43,9 +42,8 @@ function fromBrief(card, set, rarity) {
   // Embedded Radiant Collections have their own denominators; a local ID
   // remains honest until provider metadata supplies the printed denominator.
   const number = /^RC/i.test(local) ? local : official ? `${local}/${prefix}${official}` : local;
-  const category = classifyRarity(rarity, local, set.name, year);
-  if (!category) return null;
-  return {key: setKey(set.name, number), id: card.id, name: card.name, set: set.name, setId: set.id, number, year, releaseDate: set.releaseDate, rarity: category, sourceRarity: rarity, language: 'en', hype: fanProxy(card.name), image: card.image ? `${String(card.image).replace(/\/$/, '')}/low.webp` : ''};
+  const category = classifyRarity(rarity, local, set.name, year) || (rarity ? 'Standard' : 'Unclassified');
+  return {key: setKey(set.name, number), id: card.id, name: card.name, set: set.name, setId: set.id, number, year, releaseDate: set.releaseDate, rarity: category, sourceRarity: rarity || null, language: 'en', hype: fanProxy(card.name), image: card.image ? `${String(card.image).replace(/\/$/, '')}/low.webp` : ''};
 }
 /** Bulk rarity membership avoids individual detail requests for ordinary cards. */
 export async function discover({client, report}) {
@@ -65,12 +63,12 @@ export async function discover({client, report}) {
     report.setsRetrieved++; if (report.setsRetrieved % 10 === 0) write('data/set_cache.json', setCache);
   }, error => { report.discoveryErrors++; console.warn(`set discovery: ${error.message}`); });
   write('data/set_cache.json', setCache);
-  const active = Object.values(setCache).filter(set => isPhysicalSet(set) && Number(set.releaseDate?.slice(0, 4)) >= minYear && Number(set.releaseDate?.slice(0, 4)) <= CURRENT_YEAR && set.releaseDate <= today());
+  const active = Object.values(setCache).filter(set => isPhysicalSet(set) && Number(set.releaseDate?.slice(0, 4)) > 0 && Number(set.releaseDate?.slice(0, 4)) <= CURRENT_YEAR && set.releaseDate <= today());
   const all = new Map();
   for (const set of active) for (const brief of set.cards || []) all.set(brief.id, {brief, set});
   const rarities = await client.get(`${ROOT_URL}/rarities`);
   if (!Array.isArray(rarities)) throw Error('TCGdex rarity index is malformed');
-  const eligibleRarities = rarities.filter(rarity => classifyRarity(rarity));
+  const eligibleRarities = rarities; // Include every rarity from common to special illustration.
   const rarityCache = read('data/rarity_cache.json', {});
   await pooled(eligibleRarities, 4, async rarity => {
     if (rarityCache[rarity]?.checkedAt?.slice(0, 10) === today()) return;
@@ -86,7 +84,7 @@ export async function discover({client, report}) {
   for (const [id, {card, rarity}] of bulkMembership) detailCache[id] = {...detailCache[id], name: card.name, rarity, localId: card.localId, image: card.image ?? detailCache[id]?.image, reviewedBy: 'bulk-rarity'};
   write('data/card_details.json', detailCache);
   // Only exceptional secret/gallery numbers absent from bulk lists need details.
-  // Missing rarity never implies an eligible card. Commons/uncommons are not scanned.
+  // Missing rarities remain visible as Unclassified. Regular cards use set-brief metadata.
   const exceptional = [...all.values()].filter(({brief, set}) => {
     if (bulkMembership.has(brief.id) || Object.hasOwn(detailCache, brief.id)) return false;
     const official = Number(set.cardCount?.official || 0);
@@ -101,15 +99,15 @@ export async function discover({client, report}) {
   write('data/card_details.json', detailCache);
   const cards = [];
   for (const [id, {brief, set}] of all) {
-    const cached = detailCache[id]; if (!cached?.rarity && !/^(GG|TG)/i.test(brief.localId || '')) continue;
+    const cached = detailCache[id] || {};
     const card = fromBrief({...brief, ...cached}, set, cached?.rarity);
     if (card) cards.push(card);
   }
   const bulkComplete = eligibleRarities.every(rarity => rarityCache[rarity]?.checkedAt?.slice(0, 10) === today());
   const detailed = [...all.keys()].filter(id => Object.hasOwn(detailCache, id)).length;
-  const reviewed = bulkComplete ? all.size : detailed;
+  const reviewed = all.size; // All discovered physical card briefs are now represented.
   report.bulkReviewed = reviewed;
-  return {cards, progress: {catalogued: reviewed, reviewed, universe: all.size, eligible: cards.length, sets: active.length, detailRecords: detailed, bulkRarityComplete: bulkComplete, discoveryMethod: 'bulk-rarity-membership; exceptional details only'}};
+  return {cards, progress: {catalogued: reviewed, reviewed, universe: all.size, eligible: cards.length, sets: active.length, detailRecords: detailed, bulkRarityComplete: bulkComplete, discoveryMethod: 'all English physical set briefs; rarity enrichment through bulk indexes'}};
 }
 function dueResolution(record) { return record.status !== 'matched' && (!record.nextRetryAt || record.nextRetryAt <= stamp()); }
 function productFromSet(product, set) { return {...product, set_name: set.name, group_id: set.group_id, game: set.game || 'pokemon'}; }
@@ -129,7 +127,7 @@ export async function updatePrices(catalog, {client, report}) {
     write('site/prices.json', {version: 4, updatedAt: report.quotesRetrieved ? stamp() : saved.updatedAt, source: 'TickerMint (TCGplayer-derived)', prices});
     write('.cache/pokeradar/full-history.json', full);
   };
-  const sorted = [...catalog].sort((a, b) => a.year - b.year || b.hype - a.hype);
+  const sorted = [...catalog].sort((a,b)=> Number(['Standard','Unclassified'].includes(a.rarity)) - Number(['Standard','Unclassified'].includes(b.rarity)) || a.year - b.year || b.hype - a.hype);
   for (const card of sorted) ids[card.key] ||= migrateResolution(null);
   let setIndex = read('data/ticker_index_cache.json', []);
   try {
@@ -346,7 +344,7 @@ export async function main() {
   }
   const reconciled = reconcileCatalog([...byKey.values()], read('data/set_cache.json', {}), read('data/card_details.json', {}), previousPrices);
   report.catalogAliasesCollapsed = reconciled.duplicates;
-  const cards = reconciled.cards.filter(card => card.year >= minYear && card.year <= CURRENT_YEAR && (!card.language || card.language === 'en')).sort((a, b) => a.year - b.year || a.name.localeCompare(b.name));
+  const cards = reconciled.cards.filter(card => Number(card.year) > 0 && card.year <= CURRENT_YEAR && (!card.language || card.language === 'en')).sort((a, b) => a.year - b.year || a.name.localeCompare(b.name));
   discovery.progress.eligible = cards.length;
   write('site/catalog.json', {version: 4, generatedAt: stamp(), count: cards.length, progress: discovery.progress, cards});
   console.log(`Catalog: ${discovery.progress.reviewed || discovery.progress.catalogued} reviewed of ${discovery.progress.universe} physical cards; ${cards.length} eligible; ${report.detailsRetrieved} exceptional detail requests`);

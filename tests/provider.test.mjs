@@ -57,7 +57,7 @@ test('dates must be real calendar days', async () => {
   const {validDay} = await import('../scripts/provider.mjs');
   assert.equal(validDay('2026-02-30'), false); assert.equal(validDay('2024-02-29'), true); assert.equal(validDay('2026-10-18'), true);
 });
-test('bulk rarity discovery checkpoints interrupted work, skips commons and rejects missing rarity', async () => {
+test('bulk rarity discovery checkpoints interrupted work and includes every rarity', async () => {
   const {spawnSync} = await import('node:child_process');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pokeradar-discovery-'));
   const script = `
@@ -76,7 +76,7 @@ test('bulk rarity discovery checkpoints interrupted work, skips commons and reje
     assert.equal(result.status, 0, result.stderr);
     const {first, second, calls} = JSON.parse(result.stdout.trim().split('\n').at(-1));
     assert.equal(first.progress.bulkRarityComplete, false); assert.equal(second.progress.bulkRarityComplete, true);
-    assert.equal(second.cards.length, 1); assert.equal(second.cards[0].name, 'Chase');
+    assert.equal(second.cards.length, 3); assert.equal(second.cards.find(c=>c.name==='Chase').rarity,'Other'); assert.equal(second.cards.find(c=>c.name==='Common').rarity,'Unclassified'); assert.equal(second.cards.find(c=>c.name==='Unknown').rarity,'Unclassified');
     assert.equal(calls.filter(url => url.endsWith('/rarities/Secret%20Rare')).length, 1);
     assert.equal(calls.filter(url => url.endsWith('/cards/demo-3')).length, 1);
     assert.equal(calls.some(url => url.endsWith('/cards/demo-1')), false);

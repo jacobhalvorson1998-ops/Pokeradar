@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {assessCatalog} from './opportunity.mjs';
 import {renderEvaluation} from './render-evaluation.mjs';
 
-const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const root=process.env.POKERADAR_ROOT||path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const read=(name,fallback)=>{try{return JSON.parse(fs.readFileSync(path.join(root,name),'utf8'))}catch(e){if(e.code==='ENOENT')return fallback;throw e}};
 const write=(name,value)=>{
  const dest=path.join(root,name);fs.mkdirSync(path.dirname(dest),{recursive:true});
@@ -30,16 +30,18 @@ export function build({asOf=new Date().toISOString().slice(0,10)}={}){
   discoveryComplete:progress.discoveryComplete??progress.bulkRarityComplete??false,
   reviewMethod:progress.discoveryMethod??'individual card details',
  };
- for(const c of rows){
+ const detailedRows=rows.filter(c=>(snapshot.prices[c.key]?.history||[]).length>0);
+ fs.mkdirSync(path.join(root,'site/details'),{recursive:true});
+ for(const c of detailedRows){
   if(!/^[\w.-]+$/.test(c.id))throw Error('Unsafe detail filename: '+c.id);
   const market=snapshot.prices[c.key]||{};
   write('site/details/'+c.id+'.json',{...c,printing:market.printing??'Unconfirmed',history:(market.history||[]).slice(-120)});
  }
  // Remove details only for cards no longer in this build; never touch other site files.
- const names=new Set(rows.map(c=>c.id+'.json'));
+ const names=new Set(detailedRows.map(c=>c.id+'.json'));
  for(const name of fs.readdirSync(path.join(root,'site/details')))if(name.endsWith('.json')&&!names.has(name))fs.unlinkSync(path.join(root,'site/details',name));
- const listFields=['key','id','name','set','number','year','rarity','hype','image','price','asOf','productId','verifiedMatch','stale','signal','score','change7','change30','change90','drop90','historyEnough'];
- const compact=rows.filter(c=>!Number.isFinite(c.price)||c.price<100).map(c=>Object.fromEntries(listFields.filter(key=>c[key]!==undefined).map(key=>[key,c[key]])));
+ const listFields=['key','id','name','set','number','year','rarity','sourceRarity','hype','image','price','asOf','productId','verifiedMatch','stale','signal','score','change7','change30','change90','drop90','historyEnough'];
+ const compact=rows.map(c=>Object.fromEntries(listFields.filter(key=>c[key]!==undefined).map(key=>[key,c[key]])));
  const output={version:4,updatedAt:snapshot.updatedAt??null,builtAt:new Date().toISOString(),modelVersion:'set-relative-v1',buyThreshold,coverage,cards:compact};
  write('site/summary.json',output);
  if(evaluation)renderEvaluation(evaluation);

@@ -1,0 +1,24 @@
+name: Check PokéRadar changes
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify JavaScript
+        run: |
+          node --check site/app.js
+          node --check scripts/sync.mjs
+          node --check scripts/build.mjs
+          node --check scripts/opportunity.mjs
+      - name: Run unit tests
+        run: node --test tests/*.test.mjs
