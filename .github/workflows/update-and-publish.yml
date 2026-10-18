@@ -1,4 +1,4 @@
-name: Refresh Pokémon prices and publish PokéRadar
+name: Refresh Pokémon prices
 on:
   schedule:
     - cron: '18 14 * * *' # daily 14:18 UTC (~8–9 AM Central depending on DST)
@@ -8,8 +8,6 @@ on:
     paths-ignore: ['site/catalog.json', 'site/prices.json', 'data/**']
 permissions:
   contents: write
-  pages: write
-  id-token: write
 concurrency:
   group: pokeradar-update-and-publish
   cancel-in-progress: false
@@ -24,6 +22,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Validate updater and app
+        run: |
+          node --test tests/sync.test.mjs
+          node --check site/app.js
       - name: Run catalog and market updater
         run: node scripts/sync.mjs
         env:
@@ -36,23 +38,3 @@ jobs:
           git config user.email 'pokeradar-bot@users.noreply.github.com'
           git add data site/catalog.json site/prices.json
           git diff --cached --quiet || (git commit -m 'Update card catalog and market snapshots' && git push)
-  publish:
-    runs-on: ubuntu-latest
-    needs: update
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Checkout updated site
-        uses: actions/checkout@v4
-        with:
-          ref: main
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-      - name: Upload site
-        uses: actions/upload-pages-artifact@v4
-        with:
-          path: site
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4

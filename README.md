@@ -27,3 +27,9 @@ The ordinary ChatGPT GitHub connector is read-only, even when you have connected
 `node --test tests/sync.test.mjs`
 
 `node --check site/app.js`
+
+## Deployment and updates
+
+The Publish PokéRadar workflow deploys the static site independently of provider availability. It runs for site changes, manual dispatches, and successful Refresh Pokémon prices runs. The price updater runs daily at 14:18 UTC, progressively saves catalog and price data, and runs the supplied tests before syncing. GitHub Pages must use **GitHub Actions** as its source in repository Settings > Pages.
+
+For local development, run `python -m http.server 8000 --directory site`. No dependency installation is required; use Node 22 or newer for the updater and tests.
