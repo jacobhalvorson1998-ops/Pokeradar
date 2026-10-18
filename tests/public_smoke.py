@@ -23,11 +23,15 @@ for attempt in range(6):
             assert page.locator('.card').count() <= 18
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
             key = page.locator('.card').first.get_attribute('data-key')
-            with page.expect_response(lambda response: '/details/' in response.url and response.status == 200) as detail_response:
+            with page.expect_response(lambda response: '/details/' in response.url) as detail_response:
                 page.locator('[data-detail]').first.click()
-            detail = detail_response.value.json()
-            assert detail['key'] == key and isinstance(detail['history'], list) and detail['risk']
-            page.wait_for_function("document.querySelector('#modalBody').textContent.includes('Main risk')")
+            if detail_response.value.status == 200:
+                detail = detail_response.value.json()
+                assert detail['key'] == key and isinstance(detail['history'], list) and detail['risk']
+                page.wait_for_function("document.querySelector('#modalBody').textContent.includes('Main risk')")
+            else:
+                # Unpriced or newly discovered cards may have no history file yet.
+                page.wait_for_function("document.querySelector('#modalBody').textContent.includes('history is unavailable')")
             assert not errors, errors
             browser.close()
         print(json.dumps({'publicSite': base, 'catalog': snapshot['coverage']['eligible'],
