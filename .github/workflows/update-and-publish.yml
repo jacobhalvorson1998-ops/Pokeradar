@@ -1,0 +1,58 @@
+name: Refresh Pokémon prices and publish PokéRadar
+on:
+  schedule:
+    - cron: '18 14 * * *' # daily 14:18 UTC (~8–9 AM Central depending on DST)
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore: ['site/catalog.json', 'site/prices.json', 'data/**']
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+concurrency:
+  group: pokeradar-update-and-publish
+  cancel-in-progress: false
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run catalog and market updater
+        run: node scripts/sync.mjs
+        env:
+          MAX_DETAILS_PER_RUN: '650'
+          MAX_RESOLVE_PER_RUN: '65'
+          MAX_HISTORY_PER_RUN: '65'
+      - name: Save progress for the next day
+        run: |
+          git config user.name 'pokeradar-bot'
+          git config user.email 'pokeradar-bot@users.noreply.github.com'
+          git add data site/catalog.json site/prices.json
+          git diff --cached --quiet || (git commit -m 'Update card catalog and market snapshots' && git push)
+  publish:
+    runs-on: ubuntu-latest
+    needs: update
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout updated site
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
