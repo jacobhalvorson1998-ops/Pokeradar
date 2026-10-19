@@ -1,6 +1,8 @@
 """Real generated catalog: pulse, diagnostics, manual vendor offers, backup and offline use."""
 import functools
 import http.server
+import gzip
+import io
 import json
 import os
 from pathlib import Path
@@ -10,12 +12,21 @@ import unittest
 from playwright.sync_api import sync_playwright
 from mobile_smoke import QuietHandler,ROOT
 
+class VendorHandler(QuietHandler):
+    summary_override=None
+    def send_head(self):
+        if self.path.split('?')[0]=='/summary.json' and self.summary_override is not None:
+            body=self.summary_override
+            self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('Content-Encoding','gzip');self.send_header('Content-Length',str(len(body)));self.send_header('Cache-Control','no-store');self.end_headers();return io.BytesIO(body)
+        return super().send_head()
+
 class VendorWorkflow(unittest.TestCase):
     def test_vendor_market_pulse_inventory_and_offline(self):
         summary=json.loads((ROOT/'site/summary.json').read_text());cols=summary['columns']
         cards=[dict(zip(cols,r)) for r in summary['cards']]
         card=next(c for c in cards if c['setId']=='base1' and c['verifiedMatch'] and c['printing'] and c['edition'] and c['primary'] is not False)
-        handler=functools.partial(QuietHandler,directory=str(ROOT/'site'));server=http.server.ThreadingHTTPServer(('127.0.0.1',0),handler)
+        VendorHandler.summary_override=None
+        handler=functools.partial(VendorHandler,directory=str(ROOT/'site'));server=http.server.ThreadingHTTPServer(('127.0.0.1',0),handler)
         threading.Thread(target=server.serve_forever,daemon=True).start()
         try:
             with sync_playwright() as p,tempfile.TemporaryDirectory(prefix='pokeradar-vendor-') as tmp:
@@ -62,11 +73,11 @@ class VendorWorkflow(unittest.TestCase):
                 for row in revised['cards']:
                     if row[cols.index('key')]==card['key']:
                         row[cols.index('printing')]='Unconfirmed';row[cols.index('verifiedMatch')]=False;row[cols.index('variantVerified')]=False
-                context.route('**/summary.json*',lambda route:route.fulfill(status=200,content_type='application/json',body=json.dumps(revised)))
+                VendorHandler.summary_override=gzip.compress(json.dumps(revised).encode(),compresslevel=6)
                 page.locator('#refreshBtn').click();page.wait_for_function("!document.querySelector('#refreshBtn').classList.contains('busy')&&document.querySelector('#vendorReference').value===''")
                 self.assertFalse(page.locator('#vendorConfirm').is_checked());self.assertTrue(page.locator('#vendorPurchase').is_disabled())
                 self.assertEqual(page.evaluate("JSON.parse(localStorage.getItem('pokeradar_vendor_v1')).lots[0].printing"),card['printing'])
-                context.unroute('**/summary.json*')
+                VendorHandler.summary_override=None
                 if engine=='chromium':
                     page.evaluate('Promise.race([navigator.serviceWorker.ready,new Promise((_,reject)=>setTimeout(()=>reject(Error("Service worker install timed out")),15000))])');page.wait_for_function('navigator.serviceWorker.controller!==null')
                     page.evaluate("fetch('summary.json',{cache:'no-cache'}).then(r=>r.json())");page.wait_for_function("async()=>Boolean(await caches.match(new URL('summary.json',location.href).href))")
