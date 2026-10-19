@@ -81,7 +81,16 @@ export function backtest(cards, prices, {asOf=new Date(),horizonDays=30,stepDays
  const aggregateBands=[70,75,80].map(threshold=>({threshold,training:[],testing:[]}));
  const trainingTrades=Object.fromEntries(thresholds.map(threshold=>[threshold,[]]));
  const oldTraining=[],benchmarkTraining=[];
- const testSnapshots=[];
+ const testNew=[],testOld=[],testBenchmark=[];
+ let selected=null;
+ const selectTrainingThreshold=()=>{
+  if(selected)return selected;
+  const calibration=thresholds.map(threshold=>({threshold,...summarizeTrades(trainingTrades[threshold])}));
+  const adequate=calibration.filter(result=>result.signals>=minCalibrationSignals&&result.uniqueCards>=10);
+  adequate.sort((a,b)=>b.hitRate-a.hitRate||b.medianReturn-a.medianReturn||b.threshold-a.threshold);
+  const candidateThreshold=adequate[0]?.threshold??MODEL_DEFAULTS.buyThreshold;
+  return selected={calibration,adequate,candidateThreshold,threshold:retainedThreshold??candidateThreshold};
+ };
  const lastEntry=new Map();
  const skipped={noOutcome:0,immatureTraining:0,noEligibleCards:0};
  const dates=[];
@@ -115,7 +124,18 @@ export function backtest(cards, prices, {asOf=new Date(),horizonDays=30,stepDays
   for(const c of marketRows)if(c.buyEligible)for(const band of aggregateBands)if(c.score>=band.threshold){const period=training?'training':'testing',trade=getTrade(c,date,`aggregate-${period}-${band.threshold}`);if(trade&&(!training||trade.exitDate<=splitDay))band[period].push({...trade,category:c.category});}
   const eligible=rows.filter(card=>card.verifiedMatch && !card.stale && card.historyEnough && card.price>0 && card.year>0 && card.year<=Number(date.slice(0,4)) && !(card.releaseDate && card.releaseDate>date) && card.qualityWarnings.every(warning=>warning.startsWith('Only ')));
   if (!eligible.length) skipped.noEligibleCards++;
-  if (testing) {testSnapshots.push({date,rows:eligible});continue}
+  if (testing) {
+   const {threshold}=selectTrainingThreshold();
+   // Training is closed before the first held-out decision. Consume each test
+   // date now instead of retaining hundreds of thousands of full card objects.
+   for(const card of eligible){
+    collectSensitivity(card,date,'testing');
+    if(card.signal==='buy'&&card.evidenceScore>=threshold){const trade=getTrade(card,date,'test-new');if(trade)testNew.push(trade);}
+    if(oldRecommendation(card,card,{asOf:date}).signal==='buy'){const trade=getTrade(card,date,'test-old');if(trade)testOld.push(trade);}
+    const trade=getTrade(card,date,'test-benchmark');if(trade)testBenchmark.push(trade);
+   }
+   continue;
+  }
   for (const card of eligible) {
    collectSensitivity(card,date,'training');
    for (const threshold of thresholds) if (card.signal==='buy' && card.evidenceScore>=threshold) {
@@ -129,20 +149,7 @@ export function backtest(cards, prices, {asOf=new Date(),horizonDays=30,stepDays
    const trade=getTrade(card,date,'train-benchmark');if (trade && trade.exitDate<=splitDay) benchmarkTraining.push(trade);
   }
  }
- const calibration=thresholds.map(threshold=>({threshold,...summarizeTrades(trainingTrades[threshold])}));
- const adequate=calibration.filter(result=>result.signals>=minCalibrationSignals && result.uniqueCards>=10);
- // If the available sample cannot support calibration, retain the declared default.
- // Otherwise choose training hit rate, then median return, then the stricter threshold.
- adequate.sort((a,b)=>b.hitRate-a.hitRate || b.medianReturn-a.medianReturn || b.threshold-a.threshold);
- const candidateThreshold=adequate[0]?.threshold??MODEL_DEFAULTS.buyThreshold;
- const threshold=retainedThreshold??candidateThreshold;
- const testNew=[],testOld=[],testBenchmark=[];
- for (const {date,rows} of testSnapshots) for (const card of rows) {
-  collectSensitivity(card,date,'testing');
-  if (card.signal==='buy' && card.evidenceScore>=threshold) {const trade=getTrade(card,date,'test-new');if(trade)testNew.push(trade)}
-  if (oldRecommendation(card,card,{asOf:date}).signal==='buy') {const trade=getTrade(card,date,'test-old');if(trade)testOld.push(trade)}
-  const trade=getTrade(card,date,'test-benchmark');if(trade)testBenchmark.push(trade);
- }
+ const {calibration,adequate,candidateThreshold,threshold}=selectTrainingThreshold();
  const results={opportunity:summarizeTrades(testNew),previous:summarizeTrades(testOld),benchmark:summarizeTrades(testBenchmark)};
  const enough=results.opportunity.signals>=30 && results.opportunity.uniqueCards>=10;
  return {
