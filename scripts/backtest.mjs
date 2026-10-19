@@ -187,6 +187,6 @@ if (process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta
  const output=process.env.BACKTEST_OUTPUT||path.join(ROOT,'site/evaluation.json');
  fs.mkdirSync(path.dirname(output),{recursive:true});
  fs.writeFileSync(output,JSON.stringify(report)+'\n');
- console.log(`Backtest: ${report.historyStart??'no history'} to ${report.historyEnd??'no history'}; chronological split ${report.splitDate??'unavailable'}; ${report.testing.opportunity.signals} held-out new signals, ${report.testing.previous.signals} prior-model signals, ${report.testing.benchmark.signals} benchmark holds. Threshold ${report.calibration.threshold} (${report.calibration.applied?'training calibrated':'provisional'}).`);
+ console.log(`Backtest: ${report.historyStart??'no history'} to ${report.historyEnd??'no history'}; chronological split ${report.splitDate??'unavailable'}; ${report.testing.opportunity.signals} held-out new signals, ${report.testing.previous.signals} prior-model signals, ${report.testing.benchmark.signals} benchmark holds. Threshold ${report.calibration.threshold} (${report.calibration.retained?'retained production policy':report.calibration.applied?'training calibrated':'provisional'}).`);
  console.log(`Report: ${path.relative(ROOT,output)}; status: ${report.status}.`);
 }

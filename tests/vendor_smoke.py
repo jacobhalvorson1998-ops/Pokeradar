@@ -59,7 +59,7 @@ class VendorWorkflow(unittest.TestCase):
                 page.screenshot(path=str(Path(tmp)/'vendor.png'),full_page=False)
                 self.assertTrue(page.evaluate('document.documentElement.scrollWidth<=innerWidth'));self.assertEqual(errors,[])
                 if engine=='chromium':
-                    page.evaluate('navigator.serviceWorker.ready');page.wait_for_function('navigator.serviceWorker.controller!==null')
+                    page.evaluate('Promise.race([navigator.serviceWorker.ready,new Promise((_,reject)=>setTimeout(()=>reject(Error("Service worker install timed out")),15000))])');page.wait_for_function('navigator.serviceWorker.controller!==null')
                     page.evaluate("fetch('summary.json',{cache:'no-cache'}).then(r=>r.json())");page.wait_for_function("async()=>Boolean(await caches.match(new URL('summary.json',location.href).href))")
                     context.set_offline(True);page.reload(wait_until='domcontentloaded');page.wait_for_selector('#vendorSearch');page.wait_for_function("document.querySelectorAll('[data-vendor-card]').length>0")
                     self.assertEqual(page.evaluate("JSON.parse(localStorage.getItem('pokeradar_vendor_v1')).lots[0].unitCost"),64)

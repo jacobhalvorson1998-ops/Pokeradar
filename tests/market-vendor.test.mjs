@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {buildMarketPulse} from '../scripts/market-pulse.mjs';
 import {assessCatalog} from '../scripts/opportunity.mjs';
 import {catalogHealth} from '../scripts/health.mjs';
+import {mergeSourceArchives,importAuthorizedSource} from '../scripts/import-source.mjs';
 import {priorityOrder} from '../scripts/priority.mjs';
 import {PriceSource,validateObservation,disagreement} from '../site/lib/price-source.mjs';
 import {calculateOffer,trendBand} from '../site/lib/vendor.mjs';
@@ -24,7 +25,7 @@ test('declining card or set lowers the offer; -15% moderate and sharp defaults m
 });
 test('selling fees, shipping and profit cap lower max, clamp zero, and explain downside',()=>{
  const r=calculateOffer({...base,feePct:15,shipping:5,targetProfit:15});assert.equal(r.maximum,65);assert.equal(r.costCap,65);assert.equal(r.netMargin,15);assert.equal(r.breakEvenResale,82.35);
- assert.equal(calculateOffer({...base,targetProfit:150}).maximum,0);assert.ok(calculateOffer({...base,scenario:'conservative'}).maximum<80);
+ assert.equal(calculateOffer({...base,targetProfit:150}).maximum,0);assert.equal(calculateOffer({...base,shipping:200}).netMargin,-100);assert.ok(calculateOffer({...base,scenario:'conservative'}).maximum<80);
  assert.ok(calculateOffer({...base,conditionRiskPct:20,holdingPct:10,targetProfit:10}).maximum<=60);
  assert.throws(()=>calculateOffer({...base,feePct:-1}));
 });
@@ -84,5 +85,14 @@ test('diagnostic funnel separates matched-without-quote from unmatched and near 
  const unmatched=assessCatalog(c,{}, {asOf});assert.ok(unmatched.every(x=>x.primaryFailure==='unmatched'&&!x.investigate));
 });
 test('priority queue puts explicit personal keys then missing prices and chase coverage first',()=>{
- const c=cards(4);c[0].hype=20;c[1].hype=98;const order=priorityOrder(c,{[c[1].key]:{verifiedMatch:true,price:100}},[c[0].key]);assert.equal(order[0].key,c[0].key);assert.equal(order.at(-1).key,c[1].key);
+ const c=cards(4);c[0].hype=20;c[1].hype=98;const order=priorityOrder(c,{[c[1].key]:{verifiedMatch:true,price:100,asOf}},[c[0].key],asOf);assert.equal(order[0].key,c[0].key);assert.equal(order.at(-1).key,c[1].key);
+});
+
+
+test('authorized supplemental imports retain earlier good observations and distinct legacy segments',()=>{
+ const approval={name:'Approved fixture',termsUrl:'https://example.test/terms',approvedByUser:true,authorized:true,coverageVerified:true,termsReviewedAt:asOf};
+ const old=importAuthorizedSource({segments:[[{...observation,observedDate:day(110)}]]},approval);
+ const next=importAuthorizedSource({segments:[[{...observation,observedDate:day(120)}],[{...observation,condition:'LP',price:70}]]},approval);
+ const merged=mergeSourceArchives(old,next);assert.equal(merged.observations.length,3);assert.equal(merged.segments.length,2);assert.equal(merged.validationLog.previousObservationsRetained,true);
+ assert.throws(()=>importAuthorizedSource({segments:[[observation]]},{...approval,approvedByUser:false}));
 });

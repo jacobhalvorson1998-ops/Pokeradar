@@ -48,8 +48,18 @@ for attempt in range(6):
             with page.expect_response(lambda r:'/details/'in r.url) as foil_result:page.locator('[data-key='+json.dumps(reverse['key'])+'] [data-detail]').first.click()
             assert foil_result.value.status==200 and foil_result.value.json()['printing']=='Reverse Holofoil'
             page.wait_for_selector('#collectionForm')
-            assert not errors,errors;browser.close()
-        print(json.dumps({'publicSite':base,'engine':engine,'catalogCards':snapshot['coverage']['baseCards'],'verified':snapshot['coverage']['verified'],'vintageSetsDisplayed':len(vintage),'collectionPersistence':'passed','separateReverseHistory':'passed'}));break
+            page.locator('#closeModal').click()
+            page.locator('[data-nav="home"]').click();page.wait_for_selector('.pulse-card');assert snapshot['health']['funnel'][-1]['count']==snapshot['health']['signals']['buy']
+            page.locator('[data-nav="settings"]').click();page.wait_for_selector('#healthSignalCounts');assert str(snapshot['health']['signals']['buy'])+' Buy Now' in page.locator('#healthSignalCounts').inner_text()
+            page.locator('[data-nav="vendor"]').click();page.wait_for_selector('#vendorSearch');page.locator('#vendorSearch').fill(priced['name']+' '+priced['number'])
+            page.locator('[data-vendor-card='+json.dumps(priced['key'])+']').click();page.wait_for_selector('#vendorForm');assert page.locator('#vendorPurchase').is_disabled()
+            page.locator('.vendor-assumptions > summary').click()
+            for ident,value in {'vendorReference':'100','vendorCompSource':'Public verification manual condition-comp fixture','vendorSet30':'0','vendorCard30':'0','vendorProfit':'0','vendorConditionRisk':'0','vendorHolding':'0'}.items():page.locator('#'+ident).fill(value)
+            page.locator('#vendorLiquidity').select_option('normal');page.locator('#vendorVolatility').select_option('normal');page.locator('#vendorConfirm').check();page.locator('#vendorConditionConfirm').check()
+            page.wait_for_function("document.querySelector('#vendorMaximum')?.textContent==='$80.00'")
+            page.locator('#vendorSet30').fill('-15');page.wait_for_function("document.querySelector('#vendorMaximum')?.textContent==='$62.50'")
+            assert page.evaluate('document.documentElement.scrollWidth<=innerWidth');assert not errors,errors;browser.close()
+        print(json.dumps({'publicSite':base,'engine':engine,'catalogCards':snapshot['coverage']['baseCards'],'verified':snapshot['coverage']['verified'],'vintageSetsDisplayed':len(vintage),'collectionPersistence':'passed','separateReverseHistory':'passed','marketPulseAndHealth':'passed','vendorStableAndDecliningMax':'passed'}));break
     except Exception:
         if attempt==5:
             if os.environ.get('GITHUB_ACTIONS'):

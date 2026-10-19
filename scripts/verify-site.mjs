@@ -16,3 +16,14 @@ for(const card of rows){assert(!ids.has(card.id));ids.add(card.id);assert(!keys.
 for(const id of ['base1','base2','base3','base5','neo1','lc','ex1','ex16']){assert(rows.some(c=>c.setId===id&&c.primary!==false),'Missing vintage set '+id);assert(fs.existsSync(path.join(root,'site/sets',id+'.json')));}
 assert(!rows.some(c=>c.setId==='base1'&&/reverse/i.test(c.printing||'')),'Original Base Set cannot have reverse holo records');
 console.log(JSON.stringify({event:'site-verified',cards:rows.length,baseCards:s.coverage.baseCards,verified:s.coverage.verified,vintageSetsVerified:8,summaryGzipBytes:gzipSync(raw).length}));
+
+const health=JSON.parse(fs.readFileSync(path.join(root,'site/health.json')));
+assert.deepEqual(health.signals,s.health.signals);assert.equal(health.funnel[0].count,rows.length);assert.equal(health.funnel.at(-1).count,rows.filter(c=>c.signal==='buy').length);
+assert(health.funnel.every((x,i)=>i===0||x.count<=health.funnel[i-1].count));
+assert.equal(Object.values(health.primaryFailures).reduce((a,b)=>a+b,0),rows.filter(c=>c.signal!=='buy').length);
+assert.equal(s.buyThreshold,90,'Preserve the strict threshold deployed at the start of Issue #2');
+for(const set of s.sets)if(set.pulse){for(const basket of ['all','chase']){const p=set.pulse[basket];for(const days of [7,30,90]){const w=p.windows[days];if(w.status==='eligible'){assert(w.samples>=p.required);assert(p.coverage>=p.coverageRequired);assert(Number.isFinite(w.change));}else assert.equal(w.change,null);}}}
+assert.equal(s.providerPolicy.commercialPricingEnabled,false);assert.equal(s.providerPolicy.supplementalEnabled,false);
+const html=fs.readFileSync(path.join(root,'site/index.html'),'utf8'),sw=fs.readFileSync(path.join(root,'site/sw.js'),'utf8');
+for(const url of [...html.matchAll(/(?:src|href)="((?:app\.js|styles\.css)\?v=\d+)"/g)].map(x=>x[1]))assert(sw.includes(url),'The offline shell must cache the actual current version: '+url);
+console.log(JSON.stringify({event:'vendor-and-pulse-verified',pulseSets:s.sets.filter(x=>x.pulse?.all.windows[30].status==='eligible').length,signals:health.signals,investigate:health.investigate,providerFedVendor:false}));

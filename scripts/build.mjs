@@ -33,8 +33,10 @@ export function build({asOf=new Date().toISOString().slice(0,10)}={}){
   if(!row.hasDetail)continue;
   if(!/^[\w.-]+$/.test(row.id))throw Error('Unsafe detail id');names.add(row.id+'.json');
   let provenance=[];try{if(row.verifiedMatch)provenance.push(tickermintObservation(row,saved.prices[row.key]));}catch{}
-  provenance.push(...sourceExtras.filter(o=>o.cardId===(row.baseId||row.id)&&o.printing===row.printing&&o.edition===row.edition));
-  write('site/details/'+row.id+'.json',{...row,sources:provenance,sourceDisagreement:disagreement(provenance),history:history.slice(-120)});
+  const relevant=sourceExtras.filter(o=>o.cardId===(row.baseId||row.id)&&o.printing===row.printing&&o.edition===row.edition);
+  const latest=new Map();for(const o of relevant){const key=JSON.stringify([o.source,o.condition,o.metricType]);if(!latest.has(key)||latest.get(key).observedDate<o.observedDate)latest.set(key,o);}provenance.push(...latest.values());
+  const legacySeries=(supplemental.segments||[]).filter(segment=>(supplemental.approvedSources||[]).includes(segment.source)&&segment.identity.cardId===(row.baseId||row.id)&&segment.identity.printing===row.printing&&segment.identity.edition===row.edition).map(segment=>({...segment,observations:segment.observations.map(o=>validateObservation(o,{asOf}))}));
+  write('site/details/'+row.id+'.json',{...row,legacySeries,sources:provenance,sourceDisagreement:disagreement(provenance),history:history.slice(-120)});
  }
  for(const file of fs.readdirSync(path.join(root,'site/details')))if(file.endsWith('.json')&&!names.has(file))fs.unlinkSync(path.join(root,'site/details',file));
  for(const [id,group]of groups){if(!/^[\w.-]+$/.test(id))throw Error('Unsafe set id');const set=bySet.get(id);set.total=group.filter(c=>c.primary!==false).length;set.printings=group.length;set.priced=group.filter(c=>c.verifiedMatch&&!c.stale&&c.price>0).length;set.buy=group.filter(c=>c.signal==='buy').length;set.wait=group.filter(c=>c.signal==='wait').length;set.pulse=pulse.sets[id];set.metadataChecked=group.filter(c=>c.primary!==false&&c.variantMetadataChecked).length;write('site/sets/'+id+'.json',{version:5,set,cards:group.map(({history,...c})=>c)});}

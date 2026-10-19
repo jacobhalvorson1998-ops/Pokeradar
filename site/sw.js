@@ -3,7 +3,7 @@ const PREFIX = `pokeradar-${new URL(self.registration.scope).pathname.replace(/[
 const CACHE = `${PREFIX}v8`;
 const root = new URL(self.registration.scope);
 const summaryPath = new URL('summary.json', root).pathname;
-const shell = ['./', './index.html', './styles.css?v=7', './app.js?v=7', './lib/collection.mjs', './lib/vendor-ui.mjs', './lib/vendor.mjs', './lib/price-source.mjs', './lib/inventory.mjs', './manifest.webmanifest', './icon-192.png'];
+const shell = ['./', './index.html', './styles.css?v=8', './app.js?v=8', './lib/collection.mjs', './lib/vendor-ui.mjs', './lib/vendor.mjs', './lib/price-source.mjs', './lib/inventory.mjs', './manifest.webmanifest', './icon-192.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(shell.map(file => new Request(new URL(file, root), {cache: 'reload'})))).then(() => self.skipWaiting()));
 });
