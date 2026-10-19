@@ -53,6 +53,10 @@ class VendorWorkflow(unittest.TestCase):
                 page.locator('#vendorLiquidity').select_option('normal');page.locator('#vendorVolatility').select_option('normal');page.locator('#vendorConfirm').check();page.locator('#vendorConditionConfirm').check()
                 page.wait_for_function("document.querySelector('#vendorMaximum')?.textContent==='$80.00'");self.assertIn('MANUAL CONDITION COMP',page.locator('#vendorOffer').inner_text())
                 page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');self.assertTrue(page.evaluate('document.documentElement.scrollWidth<=innerWidth'),'Native select contents must stay inside the Vendor grid immediately after selection')
+                page.locator('#vendorAsked').fill('70');page.wait_for_selector('#vendorBuyNow');self.assertIn('Buy Now at This Price',page.locator('#vendorBuyNow').inner_text())
+                page.locator('#vendorAsked').fill('90');page.wait_for_function("document.querySelector('#vendorBuyNow')===null");page.locator('#vendorAsked').fill('0')
+                page.locator('#vendorSaveComp').click();page.wait_for_function("JSON.parse(localStorage.getItem('pokeradar_vendor_v1')).manualComps.length===1")
+                page.locator('#vendorCondition').select_option('LP');self.assertTrue(page.locator('#vendorUseComp').is_hidden());page.locator('#vendorCondition').select_option('NM');page.locator('#vendorUseComp').click();self.assertEqual(page.locator('#vendorReference').input_value(),'100');self.assertFalse(page.locator('#vendorConfirm').is_checked());self.assertFalse(page.locator('#vendorConditionConfirm').is_checked());self.assertTrue(page.locator('#vendorPurchase').is_disabled());page.locator('#vendorConfirm').check();page.locator('#vendorConditionConfirm').check()
                 page.locator('#vendorSet30').fill('-15');page.wait_for_function("document.querySelector('#vendorMaximum')?.textContent==='$62.50'")
                 page.locator('#vendorSet30').fill('0');page.locator('#vendorFees').fill('15');page.locator('#vendorShipping').fill('5');page.locator('#vendorProfit').fill('15');page.wait_for_function("document.querySelector('#vendorMaximum')?.textContent==='$65.00'")
                 page.locator('#vendorAsked').fill('90');page.wait_for_selector('#vendorOverMax');page.locator('#vendorQuantity').fill('2');page.locator('#vendorBundleAdd').click();self.assertIn('$130.00',page.locator('#vendorBundle').inner_text())
@@ -78,13 +82,15 @@ class VendorWorkflow(unittest.TestCase):
                 page.locator('#refreshBtn').click();page.wait_for_function("!document.querySelector('#refreshBtn').classList.contains('busy')&&document.querySelector('#vendorReference').value===''")
                 self.assertFalse(page.locator('#vendorConfirm').is_checked());self.assertTrue(page.locator('#vendorPurchase').is_disabled())
                 self.assertEqual(page.evaluate("JSON.parse(localStorage.getItem('pokeradar_vendor_v1')).lots[0].printing"),card['printing'])
+                restored=json.loads(json.dumps(summary));restored['builtAt']='2100-01-01T00:00:00Z';VendorHandler.summary_override=gzip.compress(json.dumps(restored).encode(),compresslevel=6)
+                page.locator('#refreshBtn').click();page.wait_for_function("!document.querySelector('#refreshBtn').classList.contains('busy')")
                 VendorHandler.summary_override=None
                 if engine=='chromium':
                     page.evaluate('Promise.race([navigator.serviceWorker.ready,new Promise((_,reject)=>setTimeout(()=>reject(Error("Service worker install timed out")),15000))])');page.wait_for_function('navigator.serviceWorker.controller!==null')
                     page.evaluate("fetch('summary.json',{cache:'no-cache'}).then(r=>r.json())");page.wait_for_function("async()=>Boolean(await caches.match(new URL('summary.json',location.href).href))")
                     context.set_offline(True);page.reload(wait_until='domcontentloaded');page.wait_for_selector('#vendorSearch');page.wait_for_function("document.querySelectorAll('[data-vendor-card]').length>0")
                     self.assertEqual(page.evaluate("JSON.parse(localStorage.getItem('pokeradar_vendor_v1')).lots[0].unitCost"),64)
-                    page.locator('#vendorSearch').fill(card['name']+' '+card['number']);page.locator('[data-vendor-card='+json.dumps(card['key'])+']').click();self.assertIn('not a condition',page.locator('#vendorSavedQuote').inner_text())
+                    page.locator('#vendorSearch').fill(card['name']+' '+card['number']);page.locator('[data-vendor-card='+json.dumps(card['key'])+']').click();self.assertIn('not a condition',page.locator('#vendorSavedQuote').inner_text());page.locator('#vendorUseComp').click();self.assertEqual(page.locator('#vendorReference').input_value(),'100');self.assertFalse(page.locator('#vendorConditionConfirm').is_checked());self.assertTrue(page.locator('#vendorPurchase').is_disabled())
                 print(json.dumps({'engine':engine,'passed':'fixed cohort pulse, data health, filtered counts, distinct near-buy, exact manual condition comp, fees and declines, cash/trade/bundle, purchase/sale, CSV restore, failed-save protection, offline vendor shell'}));browser.close()
         finally:server.shutdown();server.server_close()
 

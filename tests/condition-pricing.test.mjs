@@ -7,6 +7,7 @@ import {declaredPrintings,expandCard} from '../scripts/enrich.mjs';
 import {scoreCondition} from '../scripts/condition-model.mjs';
 import {evaluateConditions} from '../scripts/condition-backtest.mjs';
 import {validatePriorityRequest} from '../scripts/priority-request.mjs';
+import {emptyInventory,validateInventory,saveManualComp,cachedManualComp} from '../site/lib/inventory.mjs';
 import {calculateOffer} from '../site/lib/vendor.mjs';
 const asOf='2026-10-19',day=i=>new Date(Date.parse('2026-04-01')+i*86400000).toISOString().slice(0,10);
 const card={id:'base1-4',baseId:'base1-4',key:'base set|4/102',name:'Charizard',setId:'base1',set:'Base Set',number:'4/102',printing:'Holofoil',edition:'Unlimited',language:'en',variantVerified:true,year:1999,hype:98,rarity:'Holo Rare',tcgplayerProductId:42382};
@@ -67,4 +68,13 @@ test('Espeon ordinary Unlimited binding requires both declared editions and sepa
  const first={...c,primary:false,printing:'1st Edition Holofoil',edition:'First Edition'},raw={'Unlimited Holofoil':[{date:asOf,market:365.17}],'1st Edition Holofoil':[{date:asOf,market:237.5}]};
  const binding=resolveVintagePrinting(c,raw,[c,first]);assert.equal(binding.printing,'Unlimited Holofoil');assert.equal(binding.edition,'Unlimited');assert.equal(resolveVintagePrinting(c,raw,[c]),null);assert.equal(resolveVintagePrinting(c,{'1st Edition Holofoil':raw['1st Edition Holofoil']},[c,first]),null);
  const detail={variants_detailed:[{type:'holo',thirdParty:{tcgplayer:85316}},{type:'holo',stamp:['1st-edition'],thirdParty:{tcgplayer:85316}}]};const expanded=expandCard(c,detail,{},binding);assert.equal(expanded[0].key,c.key);assert.equal(expanded[0].printing,'Unlimited Holofoil');assert.equal(expanded[1].printing,'1st Edition Holofoil');
+});
+
+test('offline manual comps preserve exact condition and metadata, require confirmation and survive full backups',()=>{
+ const input={condition:'NM',price:100,observedDate:asOf,notes:'TEST ONLY inspected manual comparable sale',identityConfirmed:true,conditionConfirmed:true};
+ assert.throws(()=>saveManualComp(emptyInventory(),card,{...input,conditionConfirmed:false}));
+ const saved=saveManualComp(emptyInventory(),card,input),restored=validateInventory(JSON.parse(JSON.stringify(saved)));
+ assert.equal(cachedManualComp(restored,card,'NM').price,100);assert.equal(cachedManualComp(restored,card,'LP'),null);assert.equal(cachedManualComp(restored,{...card,edition:'Shadowless'},'NM'),null);assert.equal(cachedManualComp(restored,{...card,number:'5/102'},'NM'),null);
+ assert.equal(saveManualComp(restored,card,{...input,price:90}).manualComps.length,1);assert.equal(cachedManualComp(saved,card,'NM').price,100);
+ const old=saveManualComp(saved,card,{...input,observedDate:'2026-10-01'});assert.equal(cachedManualComp(old,card,'NM').observedDate,'2026-10-01');assert.deepEqual(validateInventory({version:1,lots:[],decisions:[]}).manualComps,[]);
 });
