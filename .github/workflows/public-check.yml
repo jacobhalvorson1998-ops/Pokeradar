@@ -17,5 +17,13 @@ jobs:
         run: |
           python -m pip install -r requirements-dev.txt
           python -m playwright install --with-deps webkit
+      - name: Check the identical flow on local files
+        run: |
+          python -m http.server 8000 --bind 127.0.0.1 --directory site > /tmp/pokeradar-test-server.log 2>&1 &
+          POKERADAR_TEST_SERVER_PID=$!
+          trap 'kill "$POKERADAR_TEST_SERVER_PID"' EXIT
+          python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/',timeout=5).read()"
+          BROWSER_ENGINE=webkit PUBLIC_SMOKE_ATTEMPTS=1 python tests/public_smoke.py http://127.0.0.1:8000/
       - name: Check the actual public phone layout
+        if: always()
         run: BROWSER_ENGINE=webkit PUBLIC_SMOKE_ATTEMPTS=1 python tests/public_smoke.py https://jacobhalvorson1998-ops.github.io/Pokeradar/
