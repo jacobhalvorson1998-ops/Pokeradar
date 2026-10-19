@@ -8,10 +8,10 @@ import {backtest,summarizeTrades,loadBacktestInputs} from '../scripts/backtest.m
 
 const DAY=86400000;
 const date=index=>new Date(Date.UTC(2025,0,1)+index*DAY).toISOString().slice(0,10);
-const card=(key,extra={})=>({key,name:key,set:'Test set',year:2010,rarity:'Other',hype:98,...extra});
+const card=(key,extra={})=>({key,name:key,set:'Test set',year:2010,rarity:'Other',sourceRarity:'Rare Holo',hype:98,...extra});
 const history=(count,fn)=>Array.from({length:count},(_,i)=>[date(i),fn(i)]);
 const quote=(points,extra={})=>({productId:100,verifiedMatch:true,language:'en',printing:'Holofoil',matchEvidence:'Test fixture exact name, set, collector number and English-language match',price:points.at(-1)[1],asOf:points.at(-1)[0],history:points,...extra});
-const fallingThenFlat=i=>i<86?80:i<113?60:50;
+const fallingThenFlat=i=>i<86?80:i<106?60:45;
 function fixture(count=121) {
  const cards=[card('target'),card('a'),card('b'),card('c')];
  const prices={target:quote(history(count,fallingThenFlat))};
@@ -48,7 +48,7 @@ test('same-set peer medians are robust and do not silently substitute unrelated 
 test('a large correction still falling is WAIT; a stable relative correction can be BUY',()=>{
  const {cards,prices}=fixture();
  assert.equal(assessCatalog(cards,prices,{asOf:date(120)})[0].signal,'buy');
- prices.target=quote(history(121,i=>i===120?45:fallingThenFlat(i)));
+ prices.target=quote(history(121,i=>i===120?40:fallingThenFlat(i)));
  const waiting=assessCatalog(cards,prices,{asOf:date(120)})[0];
  assert.equal(waiting.signal,'wait');assert.ok(waiting.change7<-3);
 });
@@ -62,7 +62,7 @@ test('declining whole-set markets veto Buy Now despite stabilization',()=>{
 
 test('a sharp recent set decline vetoes Buy Now even when the set remains up over 90 days',()=>{
  const {cards,prices}=fixture();
- prices.target=quote(history(121,i=>i<86?80:i<113?60:45));
+ prices.target=quote(history(121,i=>i<86?80:i<106?60:45));
  const healthySet=assessCatalog(cards,prices,{asOf:date(120)})[0];
  assert.equal(healthySet.signal,'buy');
  for (const key of ['a','b','c']) prices[key]=quote(history(121,i=>i<60?50:i<100?80:70));
@@ -80,10 +80,10 @@ test('strict metadata, staleness and history coverage prevent misleading recomme
  assert.equal(assessCatalog(cards,{...prices,target:{...prices.target,verifiedMatch:false}},{asOf:date(120)})[0].signal,'pending');
  assert.equal(assessCatalog(cards,{...prices,target:{...prices.target,language:'ja'}},{asOf:date(120)})[0].signal,'pending');
  assert.equal(assessCatalog(cards,{...prices,target:{...prices.target,printing:'Reverse Holofoil'}},{asOf:date(120)})[0].signal,'pending');
- assert.equal(assessCatalog(cards,{...prices,target:{...prices.target,printing:'Normal'}},{asOf:date(120)})[0].signal,'buy');
+ assert.equal(assessCatalog(cards,Object.fromEntries(Object.entries(prices).map(([k,v])=>[k,{...v,printing:'Normal'}])),{asOf:date(120)})[0].signal,'buy');
  assert.equal(assessCatalog(cards,{...prices,target:{...prices.target,matchEvidence:''}},{asOf:date(120)})[0].signal,'pending');
  const stale=assessCatalog(cards,prices,{asOf:date(125)})[0];
- assert.equal(stale.signal,'pending');assert.equal(stale.stale,true);assert.equal(stale.price,50);
+ assert.equal(stale.signal,'pending');assert.equal(stale.stale,true);assert.equal(stale.price,45);
  const short=quote(history(29,()=>50));
  const insufficient=assessCatalog(cards,{...prices,target:short},{asOf:date(28)})[0];
  assert.equal(insufficient.signal,'pending');assert.equal(insufficient.historyDays,28);

@@ -58,9 +58,11 @@ export function reconcileCatalog(cards, setCache, detailCache = {}, prices = {})
   }
   return {cards: [...result.values()], hydrated, duplicates};
 }
-const normalizedName = value => String(value ?? '').normalize('NFKD').toLowerCase().replace(/[^a-z0-9♀♂]/g, '');
+export const normalizedName = value => String(value ?? '').normalize('NFKD').toLowerCase().replace(/[^a-z0-9♀♂]/g, '');
 function productName(value, card) {
-  let text = String(value ?? '').replace(/\s+[-–]\s*[a-z]*\d+\s*\/\s*[a-z]*\d+\s*$/i, '');
+  let text = String(value ?? '');
+  if(['First Edition','Shadowless'].includes(card.edition))text=text.replace(/\s*\((?:1st edition|first edition|shadowless)\)\s*$/ig,'').replace(/\s+-\s*(?:1st edition|first edition|shadowless)\s*$/ig,'');
+  text = text.replace(/\s+[-–]\s*[a-z]*\d+\s*\/\s*[a-z]*\d+\s*$/i, '');
   // Only descriptive rarity annotations: gameplay suffixes EX, GX, V, etc. stay.
   const annotation = /\s*\((?:(?:\d+\s+)?(?:secret(?: rare)?|full art|alternate full art|alternate art|alt art|shiny|prime|gold)|supporter|team plasma|\d+)\)\s*$/i;
   while (annotation.test(text)) text = text.replace(annotation, '');
@@ -74,9 +76,12 @@ function imageCardId(image) {
 }
 /** A product is a match only with exact identity and affirmative English evidence. */
 export function verifyTickerProduct(product, card) {
+  if(card.priceIdentityAmbiguous)return {ok:false,reason:'provider cannot distinguish these edition prices'};
+  if(card.primary===false&&!['Standard','Unlimited'].includes(card.edition)&&!card.tcgplayerProductId)return {ok:false,reason:'special edition lacks an authoritative product binding'};
   if (card.language && !['en', 'english', 'en-us'].includes(String(card.language).toLowerCase())) return {ok: false, reason: 'catalog card is not English'};
   const id = Number(product?.product_id ?? product?.productId ?? product?.id);
   if (!Number.isSafeInteger(id) || id <= 0) return {ok: false, reason: 'missing product id'};
+  if(card.tcgplayerProductId && id!==card.tcgplayerProductId)return {ok:false,reason:'authoritative printing product id mismatch'};
   if (product.game && product.game !== 'pokemon') return {ok: false, reason: 'wrong game'};
   if (/japanese|korean|chinese|french|german|italian|spanish|portuguese|\(jp\)/i.test(`${product.name || ''} ${product.set_name || ''}`)) return {ok: false, reason: 'foreign language'};
   const setName = typeof product.set === 'object' ? product.set.name : product.set_name ?? product.set ?? product.group_name;
@@ -89,10 +94,12 @@ export function verifyTickerProduct(product, card) {
   const language = String(product.language ?? product.lang ?? '').toLowerCase();
   if (language && !['en', 'english', 'en-us'].includes(language)) return {ok: false, reason: 'foreign language'};
   const imageId = imageCardId(product.image_url ?? product.image);
-  if (card.id && product.card_id && product.card_id !== card.id) return {ok: false, reason: 'card printing id mismatch'};
-  if (card.id && imageId && imageId !== card.id) return {ok: false, reason: 'artwork printing mismatch'};
-  if (!['en', 'english', 'en-us'].includes(language) && !imageId) return {ok: false, reason: 'English printing unverified'};
-  if (/\b(?:psa|bgs|cgc|graded|jumbo|oversized|world championship|staff|prerelease|1st edition|first edition)\b/i.test(product.name || '')) return {ok: false, reason: 'unsupported product printing'};
+  if ((card.baseId||card.id) && product.card_id && product.card_id !== (card.baseId||card.id)) return {ok: false, reason: 'card printing id mismatch'};
+  if ((card.baseId||card.id) && imageId && imageId !== (card.baseId||card.id)) return {ok: false, reason: 'artwork printing mismatch'};
+  if (!['en', 'english', 'en-us'].includes(language) && !imageId && !(card.language==='en'&&card.tcgplayerProductId===id)) return {ok: false, reason: 'English printing unverified'};
+  if (/\b(?:psa|bgs|cgc|graded|jumbo|oversized|world championship|staff|prerelease)\b/i.test(product.name || '')) return {ok: false, reason: 'unsupported product printing'};
+  if(/1st edition|first edition|shadowless/i.test(product.name||'')&&!['First Edition','Shadowless'].includes(card.edition))return {ok:false,reason:'unsupported product printing'};
+  if(['First Edition','Shadowless'].includes(card.edition)&&card.tcgplayerProductId!==id)return {ok:false,reason:'edition lacks authoritative product binding'};
   return {ok: true, productId: id, groupId: Number(product.group_id) || null, language: 'en', evidence: imageId ? 'English TCGdex artwork + exact name/set/number' : 'explicit English + exact name/set/number'};
 }
 export function parseTickerHits(raw, card) {

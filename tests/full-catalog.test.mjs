@@ -25,14 +25,15 @@ test('published catalog preserves >$100, <$100, and unpriced cards',()=>{
   ];
   fs.writeFileSync(path.join(tmp,'site/catalog.json'),JSON.stringify({cards,progress:{reviewed:3,universe:3}}));
   fs.writeFileSync(path.join(tmp,'site/prices.json'),JSON.stringify({updatedAt:'2026-10-18T00:00:00Z',prices:{
-   'base set|1/102':{price:225,asOf:'2026-10-18',productId:123},
-   'modern|3/50':{price:12,asOf:'2026-10-18',productId:456}
+   'base set|1/102':{price:225,asOf:'2026-10-18',productId:123,verifiedMatch:true,language:'en',printing:'Holofoil',matchEvidence:'Exact English product fixture'},
+   'modern|3/50':{price:12,asOf:'2026-10-18',productId:456,verifiedMatch:true,language:'en',printing:'Holofoil',matchEvidence:'Exact English product fixture'}
   }}));
   execFileSync(process.execPath,[path.join(root,'scripts/build.mjs')],{env:{...process.env,POKERADAR_ROOT:tmp},stdio:'pipe'});
   const output=JSON.parse(fs.readFileSync(path.join(tmp,'site/summary.json'),'utf8'));
   assert.equal(output.cards.length,3);
-  assert.ok(output.cards.some(c=>c.year===1999&&c.price===225),'1999 pricey card should not be cut');
-  assert.ok(output.cards.some(c=>c.price===12));
-  assert.ok(output.cards.some(c=>c.rarity==='Unclassified'));
+  const rows=output.cards.map(row=>({...Object.fromEntries(output.columns.map((k,i)=>[k,row[i]])),year:output.sets.find(s=>s.id===row[output.columns.indexOf('setId')]).year}));
+  assert.ok(rows.some(c=>c.year===1999&&c.price===225),'1999 pricey card should not be cut');
+  assert.ok(rows.some(c=>c.price===12));
+  assert.ok(rows.some(c=>c.rarity==='Unclassified'));
  }finally{fs.rmSync(tmp,{recursive:true,force:true});}
 });

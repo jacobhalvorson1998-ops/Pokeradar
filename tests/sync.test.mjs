@@ -8,7 +8,7 @@ test('new and vintage rarity categories',()=>{
  assert.equal(classifyRarity('Rare Holo LV.X','143','Supreme Victors',2009),'Other');
  assert.equal(classifyRarity('LEGEND','112','HeartGold SoulSilver',2010),'Other');
  assert.equal(classifyRarity('Rare Holo','1','Stormfront',2008),null);
- assert.equal(classifyRarity('Full Art Trainer','TG12','Lost Origin',2022),'Galarian Gallery');
+ assert.equal(classifyRarity('Full Art Trainer','TG12','Lost Origin',2022),'Trainer Gallery');
 });
 test('fan appeal is editorial, bounded and stable',()=>{assert.equal(fanProxy('Pikachu'),97);assert.equal(fanProxy('Golduck'),62)});
 test('TickerMint id matching insists on printing + set',()=>{

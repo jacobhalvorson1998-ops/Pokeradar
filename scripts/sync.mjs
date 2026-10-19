@@ -27,7 +27,8 @@ export function classifyRarity(rarity,number='',setName='',year=2026){
  const r=String(rarity??'').toLowerCase().trim();const n=String(number).toUpperCase(),set=String(setName).toLowerCase();
  if(/special illustration|special art rare|s\.?i\.?r\.?/.test(r))return 'SIR';
  if(/illustration rare|illustration art rare|art rare/.test(r))return 'IR';
- if(/^(GG|TG)\d+/i.test(n)||/galarian gallery|trainer gallery/.test(set))return 'Galarian Gallery';
+ if(/^TG\d+/i.test(n)||/trainer gallery/.test(set))return 'Trainer Gallery';
+ if(/^GG\d+/i.test(n)||/galarian gallery/.test(set))return 'Galarian Gallery';
  if(/alternate art|alt art/.test(r))return 'Alt Art';
  if(/rare holo lv\.?x|rare prime|^legend$|shiny rare|shiny ultra rare|secret rare|rare secret|hyper rare|ultra rare|full art|black white rare|amazing rare|radiant rare|mega hyper rare|mega attack rare|gold star|shining|prism star|classic collection|character rare/i.test(r))return 'Other';
  // Numeric secret-numbered illustrations are candidate chase cards but require
@@ -124,11 +125,22 @@ export async function updatePrices(catalog, {client, report}) {
   const checkpoint = () => {
     write('data/resolved_ids.json', ids);
     write('data/history_status.json', historyStatus);
-    write('site/prices.json', {version: 4, updatedAt: report.quotesRetrieved ? stamp() : saved.updatedAt, source: 'TickerMint (TCGplayer-derived)', prices});
+    write('site/prices.json', {version: 4, updatedAt: report.freshQuotesRetrieved ? stamp() : saved.updatedAt, source: 'TickerMint (TCGplayer-derived)', prices});
     write('.cache/pokeradar/full-history.json', full);
   };
   const sorted = [...catalog].sort((a,b)=> Number(['Standard','Unclassified'].includes(a.rarity)) - Number(['Standard','Unclassified'].includes(b.rarity)) || a.year - b.year || b.hype - a.hype);
   for (const card of sorted) ids[card.key] ||= migrateResolution(null);
+  for(const card of sorted){
+    if(!card.variantVerified||!card.tcgplayerProductId||card.priceIdentityAmbiguous)continue;
+    const old=ids[card.key];
+    if(old.status==='matched'&&old.productId===card.tcgplayerProductId)continue;
+    ids[card.key]={status:'matched',productId:card.tcgplayerProductId,language:'en',verifiedAt:stamp(),attempts:0,matchEvidence:'TCGdex English card-specific detailed printing and TCGplayer product ID',method:'authoritative printing identity'};
+  }
+  for(const card of sorted){
+    if(card.primary!==false||!card.variantVerified||!['Standard','Unlimited'].includes(card.edition))continue;
+    const parent=ids[card.baseKey];
+    if(parent?.status==='matched'&&ids[card.key]?.status!=='matched')ids[card.key]={...parent,matchEvidence:parent.matchEvidence+'; TCGdex declares this exact foil treatment',method:'verified card identity plus declared printing'};
+  }
   let setIndex = read('data/ticker_index_cache.json', []);
   try {
     const live = await client.get(`${PRICE_URL}/sets?game=pokemon`);
@@ -143,6 +155,7 @@ export async function updatePrices(catalog, {client, report}) {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(set);
   }
+  for(const card of sorted){const r=ids[card.key],sets=groups.get(normalizedSet(card.set))||[];if(r?.status==='matched'&&!r.groupId&&sets.length===1)r.groupId=Number(sets[0].group_id);}
   const groupsNeeded = new Map();
   for (const card of sorted) {
     if (!dueResolution(ids[card.key])) continue;
@@ -224,7 +237,8 @@ export async function updatePrices(catalog, {client, report}) {
   const quoteGroups = new Map();
   for (const card of sorted) {
     const record = ids[card.key], previous = prices[card.key];
-    if (record?.status !== 'matched' || !record.groupId || !previous?.verifiedMatch || previous.productId !== record.productId || previous.language !== 'en' || !previous.matchEvidence || !['Holofoil', 'Normal'].includes(previous.printing)) continue;
+    if(card.variantVerified&&previous?.printing!==card.printing)continue;
+    if (record?.status !== 'matched' || !record.groupId || !previous?.verifiedMatch || previous.productId !== record.productId || previous.language !== 'en' || !previous.matchEvidence || !previous.printing) continue;
     if (!quoteGroups.has(record.groupId)) quoteGroups.set(record.groupId, []);
     quoteGroups.get(record.groupId).push(card);
   }
@@ -234,10 +248,10 @@ export async function updatePrices(catalog, {client, report}) {
     const rows = parseCSV(csv);
     if (!rows.length || !Object.hasOwn(rows[0], 'printing')) throw Error(`set CSV lacks printing metadata: ${groupId}`);
     report.bulkQuoteSetsRetrieved = (report.bulkQuoteSetsRetrieved || 0) + 1;
-    const byProduct = new Map(cards.map(card => [ids[card.key].productId, card]));
+    const byProduct = new Map();for(const card of cards){const id=ids[card.key].productId;if(!byProduct.has(id))byProduct.set(id,[]);byProduct.get(id).push(card);}
     for (const row of rows) {
-      const productId = Number(row.product_id), card = byProduct.get(productId);
-      if (!card) continue;
+      const productId = Number(row.product_id);
+      for(const card of byProduct.get(productId)||[]){
       const previous = prices[card.key], value = money(row.market_price_usd), day = String(row.date || '');
       if (row.printing !== previous.printing || !value || !validDay(day) || day > today() || day < previous.asOf || !isFreshDay(day) || row.url !== `https://tickermint.cards/card/${productId}`) continue;
       // English was proven when this immutable product ID was bound; CSV's
@@ -250,24 +264,24 @@ export async function updatePrices(catalog, {client, report}) {
       if (archive?.printing === previous.printing && archive.productId === productId) full.prices[card.key] = {...prices[card.key], history: mergeHistory(archive.history || [], [[day, value]])};
       report.bulkQuotesRetrieved = (report.bulkQuotesRetrieved || 0) + 1;
       report.quotesRetrieved++; report.freshQuotesRetrieved = (report.freshQuotesRetrieved || 0) + 1;
+      }
     }
     checkpoint();
     if (report.bulkQuoteSetsRetrieved % 10 === 0) console.log(`BULK PRICE progress: ${report.bulkQuoteSetsRetrieved}/${quoteGroups.size} sets; ${report.bulkQuotesRetrieved || 0} verified quotes; ${Math.round((Date.now() - priceStageStarted) / 1000)}s pricing elapsed`);
   }, error => { report.priceErrors++; console.warn(`whole-set quote refresh: ${error.message}; saved prices retained`); });
-  const needsLegacyVerification = card => prices[card.key]?.price && (!prices[card.key]?.printing || prices[card.key]?.language !== 'en' || !prices[card.key]?.matchEvidence);
+  const needsLegacyVerification = card => prices[card.key]?.price && (prices[card.key].productId!==ids[card.key]?.productId || (card.variantVerified&&prices[card.key].printing!==card.printing) || !prices[card.key]?.printing || prices[card.key]?.language !== 'en' || !prices[card.key]?.matchEvidence);
   const historyTargets = sorted.filter(card => ids[card.key]?.status === 'matched' && (!historyStatus[card.key]?.nextRetryAt || historyStatus[card.key].nextRetryAt <= stamp()) && (prices[card.key]?.historyChecked !== today() || needsLegacyVerification(card)))
     .sort((a, b) => Number(!!needsLegacyVerification(b)) - Number(!!needsLegacyVerification(a)) || String(prices[a.key]?.historyChecked || '').localeCompare(String(prices[b.key]?.historyChecked || '')) || a.year - b.year);
   if (!historyTargets.length && !report.freshQuotesRetrieved) {
     const confirm = sorted.find(card => ids[card.key]?.status === 'matched' && prices[card.key]?.printing && (!historyStatus[card.key]?.nextRetryAt || historyStatus[card.key].nextRetryAt <= stamp()));
     if (confirm) historyTargets.push(confirm); // Confirm one real quote on an otherwise up-to-date repeat.
   }
-  await pooled(historyTargets.slice(0, bounded('MAX_HISTORY_PER_RUN', 2000, 10000)), 4, async card => {
+  const saveHistory = async (card,raw) => {
     const resolution = ids[card.key];
     try {
-      const raw = await client.get(`${PRICE_URL}/products/${resolution.productId}/prices`);
       const previous = prices[card.key] || {};
       // Existing explicitly verified variant remains fixed; legacy aggregates are re-derived.
-      const chosen = parseHistoryForPrinting(raw, previous.printing || null);
+      const chosen = parseHistoryForPrinting(raw, card.variantVerified ? card.printing : previous.printing || null);
       if (!chosen.points.length) { historyStatus[card.key] = resolutionFailure(historyStatus[card.key], chosen.reason); report.priceErrors++; console.warn(`HISTORY ${card.key}: ${chosen.reason}; saved price preserved`); return; }
       const [providerDay, providerPrice] = chosen.points.at(-1);
       const sameVariant = previous.printing === chosen.printing && previous.productId === resolution.productId && previous.verifiedMatch && previous.language === 'en' && previous.matchEvidence;
@@ -283,7 +297,7 @@ export async function updatePrices(catalog, {client, report}) {
       const archived = full.prices[card.key];
       const sameArchive = archived?.printing === chosen.printing && archived?.productId === resolution.productId;
       const history = mergeHistory(sameArchive ? archived.history || [] : [], mergeHistory(sameVariant ? previous.history || [] : [], chosen.points));
-      const market = {...previous, productId: resolution.productId, verifiedMatch: true, language: 'en', printing: chosen.printing, matchEvidence: resolution.matchEvidence, verifiedAt: preserveQuote ? previous.verifiedAt : stamp(), historyVerifiedAt: stamp(), price, asOf, tickermintUrl: `https://tickermint.cards/card/${resolution.productId}`, history: history.slice(-120), historyChecked: today(), listingVolume: null, salesVolume: null};
+      const market = {...previous, productId: resolution.productId, verifiedMatch: true, language: 'en', printing: chosen.printing, edition:card.edition||'Standard', matchEvidence: resolution.matchEvidence, verifiedAt: preserveQuote ? previous.verifiedAt : stamp(), historyVerifiedAt: stamp(), price, asOf, tickermintUrl: `https://tickermint.cards/card/${resolution.productId}`, history: history.slice(-120), historyChecked: today(), listingVolume: null, salesVolume: null};
       prices[card.key] = market;
       full.prices[card.key] = {...market, history};
       historyStatus[card.key] = {status: 'complete', attempts: 0, checkedAt: stamp(), printing: chosen.printing};
@@ -294,7 +308,13 @@ export async function updatePrices(catalog, {client, report}) {
       }
       if (report.historiesRetrieved % 20 === 0) { checkpoint(); console.log(`PRICE progress: ${report.historiesRetrieved}/${historyTargets.length}; ${card.key} $${price} ${chosen.printing} @ ${asOf}`); }
     } catch (error) { if (error instanceof BudgetExceeded) throw error; historyStatus[card.key] = resolutionFailure(historyStatus[card.key], error.message, {transient: true}); report.priceErrors++; console.warn(`price/history failed ${card.key}: ${error.message}; existing verified data preserved`); }
-  }, error => { report.priceErrors++; console.warn(`history queue: ${error.message}`); checkpoint(); });
+  };
+  const historyGroups=new Map();
+  for(const card of historyTargets.slice(0,bounded('MAX_HISTORY_PER_RUN',2000,10000))){const id=ids[card.key].productId;if(!historyGroups.has(id))historyGroups.set(id,[]);historyGroups.get(id).push(card);}
+  await pooled([...historyGroups.entries()],4,async([productId,cards])=>{
+    const raw=await client.get(`${PRICE_URL}/products/${productId}/prices`);
+    for(const card of cards)await saveHistory(card,raw);
+  },(error,group)=>{report.priceErrors++;console.warn(`history queue: ${error.message}; saved prices retained`);for(const card of group?.[1]||[])historyStatus[card.key]=resolutionFailure(historyStatus[card.key],error.message,{transient:true});checkpoint();});
   checkpoint();
   report.matchedTotal = sorted.filter(card => ids[card.key]?.status === 'matched').length;
   const activeMarkets = sorted.map(card => prices[card.key]).filter(Boolean);
@@ -321,6 +341,7 @@ export async function main() {
   const tcgdex = createRateLimitedClient({minInterval: 100, deadline});
   const ticker = createRateLimitedClient({minInterval: 667, searchInterval: 3000, deadline});
   const previous = read('site/catalog.json', {cards: [], progress: {}});
+  previous.cards=(previous.cards||[]).filter(card=>card.primary!==false);
   let discovery = {cards: [], progress: previous.progress || {}};
   try { discovery = await discover({client: tcgdex, report}); }
   catch (error) { report.discoveryErrors++; console.warn(`catalog discovery failed: ${error.message}; previous catalog retained`); }
@@ -344,21 +365,24 @@ export async function main() {
   }
   const reconciled = reconcileCatalog([...byKey.values()], read('data/set_cache.json', {}), read('data/card_details.json', {}), previousPrices);
   report.catalogAliasesCollapsed = reconciled.duplicates;
-  const cards = reconciled.cards.filter(card => Number(card.year) > 0 && card.year <= CURRENT_YEAR && (!card.language || card.language === 'en')).sort((a, b) => a.year - b.year || a.name.localeCompare(b.name));
+  let cards = reconciled.cards.filter(card => Number(card.year) > 0 && card.year <= CURRENT_YEAR && (!card.language || card.language === 'en')).sort((a, b) => a.year - b.year || a.name.localeCompare(b.name));
+  const {enrichCatalog}=await import('./enrich.mjs');
+  cards=await enrichCatalog(cards,{client:tcgdex,report});
+  const catalogGeneratedAt=discovery.cards.length&&!report.discoveryErrors?stamp():previous.generatedAt||null;
   discovery.progress.eligible = cards.length;
-  write('site/catalog.json', {version: 4, generatedAt: stamp(), count: cards.length, progress: discovery.progress, cards});
+  write('site/catalog.json', {version: 4, generatedAt: catalogGeneratedAt, count: cards.length, progress: discovery.progress, cards});
   console.log(`Catalog: ${discovery.progress.reviewed || discovery.progress.catalogued} reviewed of ${discovery.progress.universe} physical cards; ${cards.length} eligible; ${report.detailsRetrieved} exceptional detail requests`);
   const priceStarted = Date.now();
   try { await updatePrices(cards, {client: ticker, report}); }
   catch (error) { report.priceErrors++; console.warn(`price provider failed: ${error.message}; all checkpoints and verified snapshots retained`); }
   // Preserve exact provider-identified Alternate Art labels learned during mapping.
-  write('site/catalog.json', {version: 4, generatedAt: stamp(), count: cards.length, progress: discovery.progress, cards});
+  write('site/catalog.json', {version: 4, generatedAt: catalogGeneratedAt, count: cards.length, progress: discovery.progress, cards});
   report.pricingSeconds = Math.round((Date.now() - priceStarted) / 1000);
   report.finishedAt = stamp(); report.elapsedSeconds = Math.round((Date.now() - started) / 1000);
   report.providers = {tcgdex: tcgdex.stats, tickermint: ticker.stats};
   // Green Actions must include real, printing-specific market observations.
   report.meaningfulSuccess = report.freshQuotesRetrieved > 0;
-  report.status = report.meaningfulSuccess ? (report.priceErrors || report.discoveryErrors ? 'partial' : 'success') : 'failed';
+  report.status = report.meaningfulSuccess ? (report.priceErrors || report.discoveryErrors || report.variantErrors ? 'partial' : 'success') : 'failed';
   write('data/sync_report.json', report);
   console.log(`Sync report: ${JSON.stringify(report)}`);
   if (!report.meaningfulSuccess) throw Error('No recent verified provider prices retrieved; run is not a successful refresh. Progress was checkpointed.');

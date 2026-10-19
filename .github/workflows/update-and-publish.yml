@@ -41,6 +41,7 @@ jobs:
         run: node scripts/sync.mjs
         env:
           MAX_DETAILS_PER_RUN: '5000'
+          MAX_VARIANT_DETAILS: '1500'
           MAX_RESOLVE_PER_RUN: '5000'
           MAX_HISTORY_PER_RUN: '2000'
           SYNC_BUDGET_MS: '1500000'

@@ -3,7 +3,7 @@
  * Scores express the owner's preferences, not a probability or return forecast.
  * Every price and peer observation is restricted to the requested evaluation day.
  */
-export const MODEL_VERSION = 4;
+export const MODEL_VERSION = 5;
 export const MODEL_WEIGHTS = Object.freeze({age:25,relativeValue:25,correction:20,momentum:15,popularity:10,liquidity:5});
 export const MODEL_DEFAULTS = Object.freeze({buyThreshold:80,minPeers:3,minObservations:28,minHistoryDays:90,maxStaleDays:4});
 export const MODEL_NOTES = [
@@ -104,7 +104,7 @@ export function marketMetrics(market={}, {asOf=new Date(),maxStaleDays=MODEL_DEF
  const historyEnough = historyDays>=MODEL_DEFAULTS.minHistoryDays && historyObservations>=MODEL_DEFAULTS.minObservations && maxGap<=14 && [7,30,90].every(days=>Number.isFinite(delta(days)));
  return {
   price,asOf:priceDay,stale:staleness===null || staleness>maxStaleDays,stalenessDays:staleness,
-  change7:rounded(delta(7)),change30:rounded(delta(30)),change90:rounded(delta(90)),
+  change7:rounded(delta(7)),change14:rounded(delta(14)),change30:rounded(delta(30)),change90:rounded(delta(90)),
   drop90:high90 && price ? rounded((price/high90-1)*100) : null,
   average90:rounded(mean90,2),medianPrice90:rounded(median90,2),high90:rounded(high90,2),
   belowAverage90:mean90 && price ? rounded((price/mean90-1)*100) : null,
@@ -114,19 +114,24 @@ export function marketMetrics(market={}, {asOf=new Date(),maxStaleDays=MODEL_DEF
 
 function identityWarningsFor(card,market) {
  const warnings = [];
+ if(card.priceIdentityAmbiguous)warnings.push('Provider prices cannot distinguish these edition variants.');
+ if(card.primary===false&&!['Standard','Unlimited'].includes(card.edition)&&!card.tcgplayerProductId)warnings.push('Special edition lacks an authoritative product binding.');
  if (market.verifiedMatch!==true || !Number.isSafeInteger(market.productId) || market.productId<1) warnings.push('Card and printing have not been verified against a provider product.');
+ if (card.tcgplayerProductId && market.productId!==card.tcgplayerProductId) warnings.push('Authoritative printing product differs from the cached price.');
  if (market.matchStatus && !['matched','verified'].includes(market.matchStatus)) warnings.push('Product matching needs review.');
  const language = String(market.language ?? '').toLowerCase();
  if (!['en','english'].includes(language)) warnings.push('English-language product identity has not been verified.');
  if (market.condition && !/^(raw|nm|near mint)$/i.test(market.condition)) warnings.push('Price condition does not match raw Near Mint screening.');
- if (!['Holofoil','Normal'].includes(market.printing)) warnings.push('An exact standard printing price has not been verified.');
+ if (!['Holofoil','Normal'].includes(market.printing) && !(card.variantVerified && card.printing===market.printing)) warnings.push('An exact declared printing price has not been verified.');
+ if (card.variantVerified && card.printing && card.printing!==market.printing) warnings.push('Price is for a different foil or edition printing.');
+ if (['First Edition','Shadowless'].includes(card.edition) && market.edition!==card.edition) warnings.push('Edition-specific identity has not been verified.');
  if (typeof market.matchEvidence!=='string' || !market.matchEvidence.trim()) warnings.push('Exact product-matching evidence has not been recorded.');
  return warnings;
 }
 
 function warningsFor(card,market,metrics,evaluationDay) {
  const warnings = identityWarningsFor(card,market);
- if (!Number.isInteger(card.year) || card.year<2008 || card.year>Number(evaluationDay.slice(0,4))) warnings.push('Release year is outside the supported catalog.');
+ if (!Number.isInteger(card.year) || card.year<1 || card.year>Number(evaluationDay.slice(0,4))) warnings.push('Release year is outside the supported catalog.');
  if (card.releaseDate && (!dayString(card.releaseDate) || dayString(card.releaseDate)>evaluationDay)) warnings.push('Card had not been released at the evaluation date.');
  if (metrics.price===null) warnings.push('No verified market price is available.');
  else if (metrics.stale) warnings.push('Latest saved price is more than four days old.');
@@ -144,7 +149,7 @@ const rarityGroup = rarity => {
 export function comparePeers(card, rows, {minPeers=MODEL_DEFAULTS.minPeers}={}) {
  // Same-set/rarity peers in a 4x band avoid comparing a $5 illustration with a $500 chase card.
  const sameSet = rows.filter(row=>row.key!==card.key && row.set===card.set && row.verifiedMatch && !row.stale && row.historyEnough && row.baseQualityWarnings.length===0 && positive(row.price));
- const peers = sameSet.filter(row=>rarityGroup(row.rarity)===rarityGroup(card.rarity) && row.price>=card.price/4 && row.price<=card.price*4);
+ const peers = sameSet.filter(row=>(row.baseId||row.id||row.key)!==(card.baseId||card.id||card.key) && (row.printing||'Holofoil')===(card.printing||'Holofoil') && (row.edition||'Standard')===(card.edition||'Standard') && rarityGroup(row.rarity)===rarityGroup(card.rarity) && row.price>=card.price/4 && row.price<=card.price*4);
  const median30 = median(peers.map(row=>row.change30));
  const median90 = median(peers.map(row=>row.change90));
  const setMedian30 = median(sameSet.map(row=>row.change30));
@@ -159,15 +164,34 @@ export function comparePeers(card, rows, {minPeers=MODEL_DEFAULTS.minPeers}={}) 
   setDeclining:sameSet.length>=minPeers ? setMedian30<=-7 || (setMedian90<=-10 && setMedian30<0) : null,
   priceRank:reliable ? ranked.findIndex(row=>row.key===card.key)+1 : null,
   rankTotal:reliable ? ranked.length : null,
-  method:'Same set, similar rarity, price between one quarter and four times the card price; excludes the card itself.'
+  method:'Same set, similar rarity and exact printing/edition, price between one quarter and four times the card price; excludes the card itself.'
  };
 }
+
+export function collectorSignificance(card) {
+ const r=String(card.sourceRarity||card.rarity||'').toLowerCase();
+ if(r==='common')return 20;if(r==='uncommon')return 30;if(r==='rare'||r==='regular rare')return 45;
+ if(/holo/.test(r))return 90;if(/gold|shining|crystal|legend|prime|lv.x|sir|special|alt/.test(r))return 100;
+ return 85;
+}
+export function collectibleAge(base,significance){return significance<=20?Math.min(base,10):significance<=30?Math.min(base,15):base*(0.35+0.65*significance/100);}
+export function preferenceScore(row,{ageWeight=25,significance='collectible',buyThreshold=80}={}) {
+ if(![15,25,35].includes(ageWeight)||!['collectible','age'].includes(significance))throw new RangeError('Unsupported preference profile');
+ if(row.score===null||!row.components)return {score:null,signal:'pending'};
+ const weights={...MODEL_WEIGHTS,age:ageWeight,relativeValue:25+(25-ageWeight)/2,correction:20+(25-ageWeight)/2};
+ const components={...row.components,age:significance==='age'?row.components.ageBase:collectibleAge(row.components.ageBase,row.components.significance)};
+ const score=Math.round(Object.entries(weights).reduce((sum,[key,w])=>sum+(components[key]||0)*w/100,0));
+ return {score,signal:row.buyEligible&&score>=buyThreshold?'buy':row.signal==='buy'?'watch':row.signal};
+}
+export const PREFERENCE_PROFILES=[15,25,35].flatMap(ageWeight=>['collectible','age'].map(significance=>({id:ageWeight+'-'+significance,ageWeight,significance})));
 
 function scoreComponents(card) {
  const relativeValue = card.peers.reliable ? clamp(35 + Math.max(0,-card.peers.relative30)*2 + Math.max(0,-card.peers.relative90)*1.2) : null;
  const correction = card.drop90!==null && card.belowAverage90!==null ? clamp(Math.max(0,-card.drop90)*2.5 + Math.max(0,-card.belowAverage90)*1.5) : null;
  const momentum = card.change7===null ? null : card.change7 < -3 ? clamp(35+(card.change7+3)*3) : card.change7 <= 4 ? 95 : clamp(75-(card.change7-4)*4);
- return {age:agePriority(card.year),relativeValue:rounded(relativeValue),correction:rounded(correction),momentum:rounded(momentum),popularity:Number.isFinite(card.hype) ? clamp(card.hype) : 50,liquidity:null};
+ const fortnight=card.change14===null?0:card.change14 < -6?25:card.change14<=8?95:60;
+ const month=card.change30===null?0:card.change30 < -16?40:card.change30>=-5?85:65;
+ return {age:collectibleAge(agePriority(card.year),collectorSignificance(card)),ageBase:agePriority(card.year),significance:collectorSignificance(card),relativeValue:rounded(relativeValue),correction:rounded(correction),momentum:rounded(momentum===null?null:momentum*.6+fortnight*.25+month*.15),popularity:Number.isFinite(card.hype) ? clamp(card.hype) : 50,liquidity:null};
 }
 
 export function assessCatalog(cards, prices, {asOf=new Date(),buyThreshold=MODEL_DEFAULTS.buyThreshold}={}) {
@@ -179,7 +203,7 @@ export function assessCatalog(cards, prices, {asOf=new Date(),buyThreshold=MODEL
   const market = markets[card.key] ?? {};
   const metrics = marketMetrics(market,{asOf:evaluationDay});
   const baseQualityWarnings = warningsFor(card,market,metrics,evaluationDay);
-  return {...card,...metrics,productId:market.productId??null,verifiedMatch:identityWarningsFor(card,market).length===0,printing:market.printing??null,tickermintUrl:market.tickermintUrl??null,baseQualityWarnings};
+  return {...card,...metrics,productId:market.productId??null,verifiedMatch:identityWarningsFor(card,market).length===0,printing:card.printing??market.printing??null,tickermintUrl:market.tickermintUrl??null,baseQualityWarnings};
  });
  const bySet = new Map();
  for (const row of rows) {
@@ -197,8 +221,8 @@ export function assessCatalog(cards, prices, {asOf=new Date(),buyThreshold=MODEL
    ? Math.round(Object.entries(MODEL_WEIGHTS).reduce((total,[key,weight])=>total+(components[key]??0)*weight/100,0)) : null;
   const meaningfulCorrection = row.drop90<=-18 && row.belowAverage90<=-7;
   const relativeValue = peers.reliable && peers.relative30<=-5 && peers.relative90<=-8;
-  const stable = row.change7>=-3 && row.change7<=4;
-  const falling = row.change7<-3 || (row.change30<-16 && row.change7<0);
+  const stable = row.change7>=-3 && row.change7<=4 && row.change14>=-6 && row.change14<=8;
+  const falling = row.change7<-3 || row.change14<-6 || (row.change30<-16 && row.change7<0);
   let signal='watch',reason='Monitor for stronger relative value and a better entry.',risk='Market estimates can differ from actual Near Mint listings; demand and liquidity are unmeasured.';
   if (qualityWarnings.length) {
    signal='pending';reason=qualityWarnings[0];risk='Missing or unreliable data prevents a trustworthy buying recommendation.';
@@ -214,7 +238,8 @@ export function assessCatalog(cards, prices, {asOf=new Date(),buyThreshold=MODEL
   }
   const entryPrice = positive(row.price) ? rounded(Math.min(row.price,(row.average90??row.price)*0.9),2) : null;
   const {baseQualityWarnings,...compact} = card;
-  return {...compact,signal,score,components,reason,risk,entryPrice,entryNote:signal==='wait'?'Watch threshold only; wait for stabilization before considering an entry.':'Watch threshold only; verify actual Near Mint listings and fees.',liquidity:'Unavailable',listings:'Unavailable',salesVolume:'Unavailable',modelVersion:MODEL_VERSION};
+  const confidence = !row.verifiedMatch ? 0 : Math.min(85,35+(!row.stale?15:0)+(row.historyEnough?20:0)+(peers.reliable?15:0));
+  return {...compact,signal,score,components,confidence,confidenceLabel:confidence>=80?'Higher':confidence>=50?'Medium':'Low',buyEligible:!qualityWarnings.length&&meaningfulCorrection&&relativeValue&&stable&&!falling&&!peers.setDeclining,reason,risk,entryPrice,entryNote:signal==='wait'?'Watch threshold only; wait for stabilization before considering an entry.':'Watch threshold only; verify actual Near Mint listings and fees.',liquidity:'Unavailable',listings:'Unavailable',salesVolume:'Unavailable',modelVersion:MODEL_VERSION};
  });
 }
 

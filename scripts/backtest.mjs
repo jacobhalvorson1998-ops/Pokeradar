@@ -57,6 +57,7 @@ export function backtest(cards, prices, {asOf=new Date(),horizonDays=30,stepDays
  if (!Number.isFinite(trainingShare) || trainingShare<=0 || trainingShare>=1) throw new RangeError('trainingShare must be between zero and one');
  const markets=prices?.prices??prices??{};
  const histories=new Map(cards.map(card=>[card.key,cleanHistory(markets[card.key]?.history,cutoff)]));
+ const candidates=cards.filter(card=>histories.get(card.key)?.length);
  const actualHistories=[...histories.values()].filter(history=>history.length);
  const starts=actualHistories.map(history=>epoch(history[0][0]));
  const ends=actualHistories.map(history=>epoch(history.at(-1)[0]));
@@ -85,8 +86,17 @@ export function backtest(cards, prices, {asOf=new Date(),horizonDays=30,stepDays
   if (!training && !testing) {skipped.immatureTraining++;continue}
   // Current price snapshots dated after `date` are ignored by marketMetrics.
   // Product identity can be checked now, but historical demand/matching coverage cannot.
-  const rows=assessCatalog(cards,markets,{asOf:date});
-  const eligible=rows.filter(card=>card.verifiedMatch && !card.stale && card.historyEnough && card.price>0 && card.price<100 && card.year>=2008 && card.year<=Number(date.slice(0,4)) && !(card.releaseDate && card.releaseDate>date) && card.qualityWarnings.every(warning=>warning.startsWith('Only ')));
+  // Fresh eligible rows only use a 90-day window, three reference days and
+  // up to four stale days. Older observations cannot affect a decision. Keep
+  // the complete series above for exits/drawdowns, and slice features only.
+  const lower=iso(epoch(date)-100*DAY),datedMarkets={};
+  for(const card of candidates){const history=histories.get(card.key);let first=0,last=history.length;
+   while(first<last){const mid=(first+last)>>1;if(history[mid][0]<lower)first=mid+1;else last=mid;}
+   let end=first;while(end<history.length&&history[end][0]<=date)end++;
+   datedMarkets[card.key]={...markets[card.key],history:history.slice(first,end)};
+  }
+  const rows=assessCatalog(candidates,datedMarkets,{asOf:date});
+  const eligible=rows.filter(card=>card.verifiedMatch && !card.stale && card.historyEnough && card.price>0 && card.year>0 && card.year<=Number(date.slice(0,4)) && !(card.releaseDate && card.releaseDate>date) && card.qualityWarnings.every(warning=>warning.startsWith('Only ')));
   if (!eligible.length) skipped.noEligibleCards++;
   if (testing) {testSnapshots.push({date,rows:eligible});continue}
   for (const card of eligible) {
@@ -122,9 +132,10 @@ export function backtest(cards, prices, {asOf=new Date(),horizonDays=30,stepDays
   training:{start:first===null?null:iso(first+90*DAY),outcomesThrough:splitDay,thresholds:calibration,previous:summarizeTrades(oldTraining),benchmark:summarizeTrades(benchmarkTraining)},
   testing:{signalsAfter:splitDay,outcomesThrough:last===null?null:iso(last),...results},
   calibration:{threshold,applied:adequate.length>0,minSignals:minCalibrationSignals,minUniqueCards:10,reason:adequate.length?'Selected only from mature training outcomes; held-out results did not affect selection.':'Too few independent training examples; the 80-point threshold remains provisional.'},
-  methodology:{horizonDays,stepDays,trainingShare,universe:cards.length,pricedHistories:actualHistories.length,signalDates:dates.length,decisionHistoryDays:90,minObservations:28,holdOverlap:'No overlapping holds for the same card in each strategy.',benchmark:'Buy every verified, fresh, under-$100 card with 90 days of usable history, irrespective of score.',previous:'The prior score and Buy rule, evaluated on the same verified, fresh, under-$100, 90-day-history cohort; missing set peers do not exclude the prior model or benchmark.',hitDefinition:`A positive market-price change after ${horizonDays} days; unchanged prices count as failed signals.`,drawdownDefinition:'Largest peak-to-trough market-price decline during each hold.',execution:'Signal-day market estimate to first provider observation on or up to three days after the horizon; no fees or slippage deducted.'},
+  methodology:{horizonDays,stepDays,trainingShare,universe:cards.length,pricedHistories:actualHistories.length,signalDates:dates.length,decisionHistoryDays:90,minObservations:28,holdOverlap:'No overlapping holds for the same card in each strategy.',benchmark:'Buy every verified, fresh card across all prices with 90 days of usable history, irrespective of score.',previous:'The prior score and Buy rule, evaluated on the verified, fresh, 90-day-history cohort across all eras; the original algorithm retains its original $100 limit; missing set peers do not exclude the prior model or benchmark.',hitDefinition:`A positive market-price change after ${horizonDays} days; unchanged prices count as failed signals.`,drawdownDefinition:'Largest peak-to-trough market-price decline during each hold.',execution:'Signal-day market estimate to first provider observation on or up to three days after the horizon; no fees or slippage deducted.'},
   skipped,
   caveats:[
+   'Only the default 25% age and collectible-significance profile is evaluated here. Other saved preference profiles have not been separately calibrated.',
    'Historical screening is not a promise of future returns. The Opportunity Score is not a hit probability.',
    'The catalog and product matches are known today: survivorship, provider coverage and retrospective-match bias remain. Historical unavailable listings cannot be reconstructed.',
    'TickerMint data begins in February 2024, even for cards released in 2008. Coverage and available history may be much shorter.',
@@ -147,7 +158,7 @@ export function loadBacktestInputs(root=ROOT) {
    const history=market?.history,snapshot=prices[key];
    // Cache entries supply observations only. Their old verification flags must
    // never override a later authoritative matching decision or a changed product.
-   if (Array.isArray(history) && snapshot && market.productId===snapshot.productId && ['Holofoil','Normal'].includes(market.printing) && snapshot.printing===market.printing) {
+   if (Array.isArray(history) && snapshot && market.productId===snapshot.productId && typeof market.printing==='string' && snapshot.printing===market.printing) {
     prices[key]={...snapshot,history:[...history,...(snapshot.history??[])]};
    }
   }

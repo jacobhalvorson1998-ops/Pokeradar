@@ -1,9 +1,9 @@
 /* Network-first shell and snapshots: fast offline use without pinning old code. */
 const PREFIX = `pokeradar-${new URL(self.registration.scope).pathname.replace(/[^a-z0-9]/gi, '_')}-`;
-const CACHE = `${PREFIX}v5`;
+const CACHE = `${PREFIX}v6`;
 const root = new URL(self.registration.scope);
 const summaryPath = new URL('summary.json', root).pathname;
-const shell = ['./', './index.html', './styles.css?v=5', './app.js?v=5', './manifest.webmanifest', './icon-192.png'];
+const shell = ['./', './index.html', './styles.css?v=6', './app.js?v=6', './lib/collection.mjs', './manifest.webmanifest', './icon-192.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(shell)).then(() => self.skipWaiting()));
 });
@@ -17,7 +17,7 @@ self.addEventListener('fetch', event => {
   if (url.origin !== root.origin || !url.pathname.startsWith(root.pathname)) return;
   const snapshot = url.pathname === summaryPath;
   const detail = url.pathname.startsWith(new URL('details/', root).pathname);
-  const supported = snapshot || detail || event.request.mode === 'navigate' || /\.(?:js|css|png|webmanifest)$/.test(url.pathname);
+  const supported = snapshot || detail || event.request.mode === 'navigate' || /\.(?:js|mjs|css|png|webmanifest)$/.test(url.pathname);
   if (!supported) return;
   // Refresh query strings share one offline snapshot; detail histories keep their own key.
   const cacheKey = snapshot ? new URL('summary.json', root).href : event.request;

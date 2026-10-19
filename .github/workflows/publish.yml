@@ -63,3 +63,6 @@ jobs:
         uses: actions/deploy-pages@v4
       - name: Verify the live mobile website
         run: python tests/public_smoke.py '${{ steps.deployment.outputs.page_url }}'
+
+      - name: Verify the live mobile WebKit website
+        run: BROWSER_ENGINE=webkit python tests/public_smoke.py '${{ steps.deployment.outputs.page_url }}'
