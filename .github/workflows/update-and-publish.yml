@@ -52,16 +52,20 @@ jobs:
         if: always() && steps.checkout.outcome == 'success'
         run: node scripts/build.mjs && node scripts/verify-site.mjs
       - name: Save progress for the next day
+        id: progress
         if: always() && steps.checkout.outcome == 'success'
         run: |
           git config user.name 'pokeradar-bot'
           git config user.email 'pokeradar-bot@users.noreply.github.com'
-          git add data site
-          if ! git diff --cached --quiet; then
-            git commit -m 'Update card catalog and market snapshots'
-            git pull --rebase origin main
-            git push origin HEAD:main
-          fi
+          bash scripts/save-progress.sh
+      - name: Preserve a conflicting raw checkpoint
+        if: failure() && steps.progress.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pokeradar-raw-progress-${{ github.run_id }}
+          path: ${{ runner.temp }}/pokeradar-checkpoint.tgz
+          if-no-files-found: warn
+          retention-days: 7
       - name: Retain evaluation history checkpoints
         if: always() && hashFiles('.cache/pokeradar/full-history.json') != ''
         uses: actions/cache/save@v4

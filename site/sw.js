@@ -1,11 +1,11 @@
 /* Network-first shell and snapshots: fast offline use without pinning old code. */
 const PREFIX = `pokeradar-${new URL(self.registration.scope).pathname.replace(/[^a-z0-9]/gi, '_')}-`;
-const CACHE = `${PREFIX}v6`;
+const CACHE = `${PREFIX}v7`;
 const root = new URL(self.registration.scope);
 const summaryPath = new URL('summary.json', root).pathname;
-const shell = ['./', './index.html', './styles.css?v=6', './app.js?v=6', './lib/collection.mjs', './manifest.webmanifest', './icon-192.png'];
+const shell = ['./', './index.html', './styles.css?v=7', './app.js?v=7', './lib/collection.mjs', './manifest.webmanifest', './icon-192.png'];
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(shell)).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(shell.map(file => new Request(new URL(file, root), {cache: 'reload'})))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', event => {
   // Other applications on this origin may have their own caches.
@@ -30,7 +30,7 @@ self.addEventListener('fetch', event => {
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
     try {
-      const response = await fetch(event.request);
+      const response = await fetch(event.request, {cache: 'no-cache'});
       if (response.ok) {
         // Detail files stay uncached: one history per opened card, no unbounded cache growth.
         if (!detail) event.waitUntil(cache.put(cacheKey, response.clone()).catch(() => {}));

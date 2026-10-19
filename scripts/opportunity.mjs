@@ -241,7 +241,7 @@ export function assessCatalog(cards, prices, {asOf=new Date(),buyThreshold=MODEL
   } else if (score>=buyThreshold && (!meaningfulCorrection || !relativeValue)) {
    reason='High preference score, but the required correction and peer-value gates are not both met.';
   }
-  const entryPrice = positive(row.price) ? rounded(Math.min(row.price,(row.average90??row.price)*0.9),2) : null;
+  const entryPrice = !qualityWarnings.length && positive(row.price) ? rounded(Math.min(row.price,(row.average90??row.price)*0.9),2) : null;
   const {baseQualityWarnings,...compact} = card;
   const confidence = !row.verifiedMatch ? 0 : Math.min(85,35+(!row.stale?15:0)+(row.historyEnough?20:0)+(peers.reliable?15:0));
   return {...compact,signal,score,evidenceScore,components,confidence,confidenceLabel:confidence>=80?'Higher':confidence>=50?'Medium':'Low',buyEligible:!qualityWarnings.length&&meaningfulCorrection&&relativeValue&&stable&&!falling&&!peers.setDeclining,reason,risk,entryPrice,entryNote:signal==='wait'?'Watch threshold only; wait for stabilization before considering an entry.':'Watch threshold only; verify actual Near Mint listings and fees.',liquidity:'Unavailable',listings:'Unavailable',salesVolume:'Unavailable',modelVersion:MODEL_VERSION};

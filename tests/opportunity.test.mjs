@@ -83,7 +83,7 @@ test('strict metadata, staleness and history coverage prevent misleading recomme
  assert.equal(assessCatalog(cards,Object.fromEntries(Object.entries(prices).map(([k,v])=>[k,{...v,printing:'Normal'}])),{asOf:date(120)})[0].signal,'buy');
  assert.equal(assessCatalog(cards,{...prices,target:{...prices.target,matchEvidence:''}},{asOf:date(120)})[0].signal,'pending');
  const stale=assessCatalog(cards,prices,{asOf:date(125)})[0];
- assert.equal(stale.signal,'pending');assert.equal(stale.stale,true);assert.equal(stale.price,45);
+ assert.equal(stale.signal,'pending');assert.equal(stale.stale,true);assert.equal(stale.price,45);assert.equal(stale.entryPrice,null);
  const short=quote(history(29,()=>50));
  const insufficient=assessCatalog(cards,{...prices,target:short},{asOf:date(28)})[0];
  assert.equal(insufficient.signal,'pending');assert.equal(insufficient.historyDays,28);
