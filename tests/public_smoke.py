@@ -7,7 +7,8 @@ import traceback
 import urllib.request
 from playwright.sync_api import sync_playwright
 base=sys.argv[1].rstrip('/')+'/'
-for attempt in range(6):
+attempts=max(1,min(6,int(os.environ.get('PUBLIC_SMOKE_ATTEMPTS','6'))))
+for attempt in range(attempts):
     try:
         with urllib.request.urlopen(base+'summary.json',timeout=25) as response:snapshot=json.load(response)
         assert snapshot['version']==5 and snapshot['coverage']['verified']>0
@@ -58,10 +59,11 @@ for attempt in range(6):
             page.locator('#vendorLiquidity').select_option('normal');page.locator('#vendorVolatility').select_option('normal');page.locator('#vendorConfirm').check();page.locator('#vendorConditionConfirm').check()
             page.wait_for_function("document.querySelector('#vendorMaximum')?.textContent==='$80.00'")
             page.locator('#vendorSet30').fill('-15');page.wait_for_function("document.querySelector('#vendorMaximum')?.textContent==='$62.50'")
-            assert page.evaluate('document.documentElement.scrollWidth<=innerWidth');assert not errors,errors;browser.close()
+            page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+            assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'),page.evaluate("JSON.stringify({inner:innerWidth,client:document.documentElement.clientWidth,x:scrollX,visual:visualViewport?{width:visualViewport.width,scale:visualViewport.scale,offset:visualViewport.offsetLeft}:null,scroll:document.documentElement.scrollWidth,body:document.body.scrollWidth,screen:location.hash,date:{min:getComputedStyle(document.querySelector('#vendorDate')).minWidth,max:getComputedStyle(document.querySelector('#vendorDate')).maxWidth,font:getComputedStyle(document.querySelector('#vendorDate')).fontSize},offenders:[...document.querySelectorAll('body *')].filter(e=>e.getBoundingClientRect().width>0&&(e.getBoundingClientRect().right>innerWidth+1||e.scrollWidth>e.clientWidth+1)).slice(-20).map(e=>({tag:e.tagName,id:e.id,cls:e.className,right:e.getBoundingClientRect().right,width:e.getBoundingClientRect().width,scroll:e.scrollWidth,min:getComputedStyle(e).minWidth,max:getComputedStyle(e).maxWidth,font:getComputedStyle(e).fontSize,display:getComputedStyle(e).display}))})");assert not errors,errors;browser.close()
         print(json.dumps({'publicSite':base,'engine':engine,'catalogCards':snapshot['coverage']['baseCards'],'verified':snapshot['coverage']['verified'],'vintageSetsDisplayed':len(vintage),'collectionPersistence':'passed','separateReverseHistory':'passed','marketPulseAndHealth':'passed','vendorStableAndDecliningMax':'passed'}));break
     except Exception:
-        if attempt==5:
+        if attempt==attempts-1:
             if os.environ.get('GITHUB_ACTIONS'):
                 trace=traceback.format_exc()[-6000:].replace('%','%25').replace('\r','%0D').replace('\n','%0A');print('::error title=Public browser regression::'+trace)
             raise

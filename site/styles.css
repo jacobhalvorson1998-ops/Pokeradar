@@ -10,3 +10,6 @@
 .pulse-card .set-card-top button{font-size:14px;line-height:1.4}.pulse-card [data-pulse-pin]{min-width:38px;font-size:19px!important;text-align:center!important}.licensing-note summary{cursor:pointer}.source-panel{padding:14px;border:1px solid #33523f;border-radius:12px;margin:18px 0}.source-panel p{font-size:11px;line-height:1.7;margin:8px 0}
 
 .vendor-fields input,.vendor-fields select{min-width:0;max-width:100%;width:100%}.vendor-fields input[type="date"]{appearance:none;-webkit-appearance:none;min-width:0;max-width:100%;text-align:left}.file-button{min-width:0;max-width:100%;overflow:hidden}#vendorPanel p{overflow-wrap:anywhere}#vendorForm{min-width:0}
+/* Safari menulist contents must stay inside each narrow show-desk column. */
+#vendorPanel label:not(.check-control):not(.file-button){grid-template-columns:minmax(0,1fr)}
+#vendorPanel select{appearance:none;-webkit-appearance:none;min-inline-size:0;max-inline-size:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:30px;background-image:linear-gradient(45deg,transparent 50%,#a8e7c0 50%),linear-gradient(135deg,#a8e7c0 50%,transparent 50%);background-position:calc(100% - 15px) 50%,calc(100% - 10px) 50%;background-size:5px 5px;background-repeat:no-repeat}
