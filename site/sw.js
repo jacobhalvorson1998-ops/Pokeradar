@@ -29,8 +29,15 @@ self.addEventListener('fetch', event => {
   }
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
+    const saved = await cache.match(cacheKey);
+    // Versioned shell modules are already refreshed by install. Serve them
+    // immediately so a weak show connection cannot stall the lazy Vendor tab.
+    if(saved&&!snapshot&&!detail&&event.request.mode!=='navigate')return saved;
+    const controller=new AbortController();
+    const timer=saved?setTimeout(()=>controller.abort(),3000):null;
     try {
-      const response = await fetch(event.request, {cache: 'no-cache'});
+      const response = await fetch(event.request, {cache: 'no-cache',signal:controller.signal});
+      if(timer)clearTimeout(timer);
       if (response.ok) {
         // Keep at most 60 previously opened histories for poor-signal shows.
         event.waitUntil((async()=>{await cache.put(cacheKey,response.clone());if(detail){const keys=(await cache.keys()).filter(r=>new URL(r.url).pathname.startsWith(new URL('details/',root).pathname));await Promise.all(keys.slice(0,Math.max(0,keys.length-60)).map(key=>cache.delete(key)));}})().catch(()=>{}));
@@ -39,6 +46,7 @@ self.addEventListener('fetch', event => {
       const saved = await cache.match(cacheKey);
       return saved ? offlineResponse(saved) : response;
     } catch (error) {
+      if(timer)clearTimeout(timer);
       const saved = await cache.match(cacheKey);
       if (saved) return offlineResponse(saved);
       if (event.request.mode === 'navigate' && (url.pathname === root.pathname || url.pathname === new URL('index.html', root).pathname)) {

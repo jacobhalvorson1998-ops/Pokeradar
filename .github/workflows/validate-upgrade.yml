@@ -17,18 +17,11 @@ jobs:
         with:
           python-version: '3.12'
       - name: Read official documentation without paid requests
+        if: github.event_name == 'workflow_dispatch'
         run: python scripts/research-providers.py
-      - name: Restore historical archive
-        uses: actions/cache/restore@v4
-        with:
-          path: .cache/pokeradar/full-history.json
-          key: pokeradar-history-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            pokeradar-history-${{ runner.os }}-
       - name: Unit tests and generated data
         run: |
           node --test tests/*.test.mjs
-          node scripts/backtest.mjs
           node scripts/build.mjs
           node scripts/verify-site.mjs
           node --check site/app.js

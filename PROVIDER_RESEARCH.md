@@ -24,7 +24,7 @@ Vendor Mode therefore uses **visibly manual condition comps and manual trend inp
 
 ## Research evidence and sources
 
-The environment network draft preserves the existing policy and adds official provider documentation and Playwright download domains. Saving a draft does not prove those sites are accessible or their terms verified. The repeatable `scripts/research-providers.py` reads public documentation only, preserves normal TLS verification, and records responses, content hashes and relevant excerpts. GitHub Actions also attempts these ordinary documentation reads from its runner; blocked responses stay explicitly unverified. No bot challenge is solved or bypassed.
+The environment network draft preserves the existing policy and adds official provider documentation and Playwright download domains. Saving a draft does not prove those sites are accessible or their terms verified. The repeatable `scripts/research-providers.py` reads public documentation only, preserves normal TLS verification, and records responses, content hashes and relevant excerpts. A second direct attempt from the GitHub-hosted runner in run 39306639575 returned HTTP 403 for all ten official documentation URLs, including Scrydex and TickerMint. The local TCGplayer market-definition response was 200. These access failures remain explicitly unverified; the runner did not establish any license grant. No bot challenge is solved or bypassed.
 
 - https://tickermint.cards/developers
 - https://tickermint.cards/terms
