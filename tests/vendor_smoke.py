@@ -57,7 +57,16 @@ class VendorWorkflow(unittest.TestCase):
                 before=page.evaluate("localStorage.getItem('pokeradar_vendor_v1')");page.evaluate("()=>{const original=Storage.prototype.setItem;window.restoreVendorStorage=()=>{Storage.prototype.setItem=original;};Storage.prototype.setItem=function(k,v){if(k==='pokeradar_vendor_v1')throw new DOMException('Quota','QuotaExceededError');return original.call(this,k,v)}}")
                 page.locator('#vendorDeclineButton').click();self.assertEqual(before,page.evaluate("localStorage.getItem('pokeradar_vendor_v1')"));page.evaluate('window.restoreVendorStorage()')
                 page.screenshot(path=str(Path(tmp)/'vendor.png'),full_page=False)
-                self.assertTrue(page.evaluate('document.documentElement.scrollWidth<=innerWidth'));self.assertEqual(errors,[])
+                self.assertTrue(page.evaluate('document.documentElement.scrollWidth<=innerWidth'),page.evaluate("JSON.stringify([...document.querySelectorAll('body *')].filter(e=>e.getBoundingClientRect().right>innerWidth+1).slice(0,20).map(e=>({tag:e.tagName,id:e.id,class:e.className,right:e.getBoundingClientRect().right,width:e.getBoundingClientRect().width})))"));self.assertEqual(errors,[])
+                revised=json.loads(json.dumps(summary));revised['builtAt']='2099-01-01T00:00:00Z'
+                for row in revised['cards']:
+                    if row[cols.index('key')]==card['key']:
+                        row[cols.index('printing')]='Unconfirmed';row[cols.index('verifiedMatch')]=False;row[cols.index('variantVerified')]=False
+                context.route('**/summary.json*',lambda route:route.fulfill(status=200,content_type='application/json',body=json.dumps(revised)))
+                page.locator('#refreshBtn').click();page.wait_for_function("!document.querySelector('#refreshBtn').classList.contains('busy')&&document.querySelector('#vendorReference').value===''")
+                self.assertFalse(page.locator('#vendorConfirm').is_checked());self.assertTrue(page.locator('#vendorPurchase').is_disabled())
+                self.assertEqual(page.evaluate("JSON.parse(localStorage.getItem('pokeradar_vendor_v1')).lots[0].printing"),card['printing'])
+                context.unroute('**/summary.json*')
                 if engine=='chromium':
                     page.evaluate('Promise.race([navigator.serviceWorker.ready,new Promise((_,reject)=>setTimeout(()=>reject(Error("Service worker install timed out")),15000))])');page.wait_for_function('navigator.serviceWorker.controller!==null')
                     page.evaluate("fetch('summary.json',{cache:'no-cache'}).then(r=>r.json())");page.wait_for_function("async()=>Boolean(await caches.match(new URL('summary.json',location.href).href))")

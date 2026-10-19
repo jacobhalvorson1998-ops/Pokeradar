@@ -27,3 +27,5 @@ assert.equal(s.providerPolicy.commercialPricingEnabled,false);assert.equal(s.pro
 const html=fs.readFileSync(path.join(root,'site/index.html'),'utf8'),sw=fs.readFileSync(path.join(root,'site/sw.js'),'utf8');
 for(const url of [...html.matchAll(/(?:src|href)="((?:app\.js|styles\.css)\?v=\d+)"/g)].map(x=>x[1]))assert(sw.includes(url),'The offline shell must cache the actual current version: '+url);
 console.log(JSON.stringify({event:'vendor-and-pulse-verified',pulseSets:s.sets.filter(x=>x.pulse?.all.windows[30].status==='eligible').length,signals:health.signals,investigate:health.investigate,providerFedVendor:false}));
+
+for(const card of rows)if(card.score!==null){assert(Array.isArray(card.profileScores));assert.equal(card.profileScores.length,s.profiles.length);assert(card.profileScores.every(Number.isFinite));const index=s.profiles.findIndex(p=>p.ageWeight===25&&p.significance==='collectible');assert.equal(card.profileScores[index],card.score);}
