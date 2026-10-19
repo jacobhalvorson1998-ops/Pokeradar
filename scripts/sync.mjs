@@ -307,7 +307,7 @@ export async function updatePrices(catalog, {client, report}) {
       const archived = full.prices[card.key];
       const sameArchive = archived?.printing === chosen.printing && archived?.productId === resolution.productId;
       const history = mergeHistory(sameArchive ? archived.history || [] : [], mergeHistory(sameVariant ? previous.history || [] : [], chosen.points));
-      const market = {...previous, productId: resolution.productId, verifiedMatch: true, language: 'en', printing: chosen.printing, edition:card.edition||'Standard', matchEvidence: resolution.matchEvidence, verifiedAt: preserveQuote ? previous.verifiedAt : stamp(), historyVerifiedAt: stamp(), price, asOf, tickermintUrl: `https://tickermint.cards/card/${resolution.productId}`, history: history.slice(-120), historyChecked: today(), listingVolume: null, salesVolume: null};
+      const market = {...previous, matchStatus:'matched', identityReview:null, productId: resolution.productId, verifiedMatch: true, language: 'en', printing: chosen.printing, edition:card.edition||'Standard', matchEvidence: resolution.matchEvidence, verifiedAt: preserveQuote ? previous.verifiedAt : stamp(), historyVerifiedAt: stamp(), price, asOf, tickermintUrl: `https://tickermint.cards/card/${resolution.productId}`, history: history.slice(-120), historyChecked: today(), listingVolume: null, salesVolume: null};
       prices[card.key] = market;
       full.prices[card.key] = {...market, history};
       historyStatus[card.key] = {status: 'complete', attempts: 0, checkedAt: stamp(), printing: chosen.printing};
