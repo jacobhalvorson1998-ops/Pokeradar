@@ -46,7 +46,7 @@ class MobileWorkflow(unittest.TestCase):
                 self.assertTrue(page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
                 self.assertFalse(any('/details/'in r or '/prices.json'in r or '/catalog.json'in r for r in requests))
                 page.screenshot(path=str(Path(tmp)/'home.png'),full_page=False)
-                page.locator('[data-nav="sets"]').click();page.locator('[data-open-set="base1"]').click();page.wait_for_function("document.querySelector('#goalTotal')?.textContent==='102'")
+                page.locator('[data-nav="sets"]').click();page.locator('[data-open-set="base1"]').click();page.wait_for_function("document.querySelector('#goalTotal')?.textContent==='102'");page.wait_for_function("document.querySelectorAll('.card').length>0&&[...document.querySelectorAll('.card')].every(c=>c.dataset.year==='1999'&&c.querySelector('.set').textContent.includes('Base Set'))")
                 self.assertIn('1999',page.locator('#selectedSet').inner_text());self.assertTrue(page.locator('.card[data-year="1999"]').count()>0);self.assertIn('Holo',page.locator('.card').first.inner_text())
                 self.assertNotIn('Reverse',page.locator('#cardList').inner_text());key=page.locator('.card').first.get_attribute('data-key')
                 page.locator('[data-own]').first.click();page.wait_for_function("document.querySelector('#goalOwned').textContent==='1'")
