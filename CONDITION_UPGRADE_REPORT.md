@@ -42,4 +42,16 @@ Scrydex and JustTCG official docs/pricing/terms returned HTTP 403 here; actual v
 
 ## Validation
 
-Local validation passes 81 unit tests and the mobile Chromium collection, Vendor and condition/page-size workflows. The native Chromium/WebKit branch and public deployment results are recorded after publication. Synthetic source/price fixtures run only inside tests and never enter site data.
+Published application release: `13ef629382112943a96a9abf36ea769bc9dc7024`.
+
+Successful Pages deployment and public checks: https://github.com/jacobhalvorson1998-ops/Pokeradar/actions/runs/39321812966
+
+All 81 unit tests passed. Mobile Chromium and native WebKit each passed collection/backups, Vendor/offline inventory and saved manual comps, and condition/100-card browsing workflows before deployment. The public HTTPS website then passed both mobile engines, including 100-card compact scrolling and preference persistence, vintage sets, collection persistence, separate Legendary Collection reverse history, and actual-offer labels only within the manual condition-matched maximum. TLS verification stayed enabled throughout. These are iPhone-sized browser tests at 390 × 844, not measurements from a physical iPhone.
+
+Publication-run Chromium measurements: **2.762 seconds cold / 0.585 seconds cached**, with 4× CPU slowdown, 80 ms latency and roughly 8 Mbps download. Native WebKit: **3.063 seconds cold / 0.069 seconds cached**, without those Chromium-specific throttles. Switching to 100 cards took around 0.21 seconds in the separate local Chromium check. The initial index stays below 1 MB gzip and contains no full histories; artwork and opened details load separately.
+
+The verified public snapshot was built October 19, 2026 at 20:47:18 UTC. It contains 21,256 base cards and 27,470 printing records, 7,256 fresh aggregate research prices, 7,158 history-ready aggregate records, 4,793 unmatched records and 15,082 missing/ambiguous variant records. The vintage audit withholds 93 cached identity/printing problems. NM coverage is 0/27,470 and LP coverage is 0/27,470. The separate legacy aggregate diagnostics show 0 strict signals, 1,092 Wait, 5,462 Watch and 20,916 Insufficient Data. These counts are dated snapshot observations, not permanently fixed totals.
+
+A later backend repair (`c8b308db`) also passes all 81 unit tests: successful exact-price reverification clears an obsolete review marker while replacing any mismatched-product history with the newly verified series. Daily and authenticated priority refreshes continue through the existing workflow; they do not create condition prices or authorize new providers.
+
+Reusable cloud startup instructions were updated for the 81-test suite, three mobile workflows and condition/manual-comp rules. They were saved as a draft; publishing that reusable cloud environment in Environment settings is separate from the already completed website deployment. Synthetic source/price fixtures run only inside tests and never enter site data.
