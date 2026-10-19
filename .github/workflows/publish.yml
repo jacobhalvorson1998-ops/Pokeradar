@@ -33,9 +33,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Restore historical evaluation archive
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/pokeradar/full-history.json
+          key: pokeradar-history-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            pokeradar-history-${{ runner.os }}-
       - name: Verify published data and model
         run: |
           node --test tests/*.test.mjs
+          node scripts/backtest.mjs
+          node scripts/build.mjs
           node scripts/verify-site.mjs
           node --check site/app.js
       - name: Python browser checks

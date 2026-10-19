@@ -3,12 +3,12 @@
  * Scores express the owner's preferences, not a probability or return forecast.
  * Every price and peer observation is restricted to the requested evaluation day.
  */
-export const MODEL_VERSION = 5;
+export const MODEL_VERSION = 6;
 export const MODEL_WEIGHTS = Object.freeze({age:25,relativeValue:25,correction:20,momentum:15,popularity:10,liquidity:5});
 export const MODEL_DEFAULTS = Object.freeze({buyThreshold:80,minPeers:3,minObservations:28,minHistoryDays:90,maxStaleDays:4});
 export const MODEL_NOTES = [
  'Opportunity Score is a preference-based screen, not a predicted return or probability.',
- 'The 80-point Buy Now threshold is provisional unless a sufficiently large held-out backtest supports calibration.',
+ 'The 80-point non-age market-evidence threshold is provisional unless a sufficiently large held-out backtest supports calibration.',
  'Liquidity, sales volume and listing quality are unavailable; their 5% contribution is zero, so the available-data score is capped at 95.',
  'Collector popularity is an editorial species proxy, not measured demand or sales.',
  'TickerMint history begins in February 2024; release year does not imply a long price history.',
@@ -171,7 +171,8 @@ export function comparePeers(card, rows, {minPeers=MODEL_DEFAULTS.minPeers}={}) 
 
 export function collectorSignificance(card) {
  const r=String(card.sourceRarity||card.rarity||'').toLowerCase();
- if(r==='common')return 20;if(r==='uncommon')return 30;if(r==='rare'||r==='regular rare')return 45;
+ const historic=card.variantVerified&&/^(First Edition|Shadowless)/.test(card.edition||'');
+ if(r==='common')return historic?75:20;if(r==='uncommon')return historic?75:30;if(r==='rare'||r==='regular rare')return historic?75:45;
  if(/holo/.test(r))return 90;if(/gold|shining|crystal|legend|prime|lv.x|sir|special|alt/.test(r))return 100;
  return 85;
 }
@@ -182,7 +183,7 @@ export function preferenceScore(row,{ageWeight=25,significance='collectible',buy
  const weights={...MODEL_WEIGHTS,age:ageWeight,relativeValue:25+(25-ageWeight)/2,correction:20+(25-ageWeight)/2};
  const components={...row.components,age:significance==='age'?row.components.ageBase:collectibleAge(row.components.ageBase,row.components.significance)};
  const score=Math.round(Object.entries(weights).reduce((sum,[key,w])=>sum+(components[key]||0)*w/100,0));
- return {score,signal:row.buyEligible&&score>=buyThreshold?'buy':row.signal==='buy'?'watch':row.signal};
+ return {score,signal:row.signal};
 }
 export const PREFERENCE_PROFILES=[15,25,35].flatMap(ageWeight=>['collectible','age'].map(significance=>({id:ageWeight+'-'+significance,ageWeight,significance})));
 
@@ -220,6 +221,9 @@ export function assessCatalog(cards, prices, {asOf=new Date(),buyThreshold=MODEL
   // No credit is invented for unavailable liquidity/listing data and weights are never rescaled.
   const score = row.historyEnough && row.verifiedMatch && !row.stale && peers.reliable && row.baseQualityWarnings.length===0
    ? Math.round(Object.entries(MODEL_WEIGHTS).reduce((total,[key,weight])=>total+(components[key]??0)*weight/100,0)) : null;
+  // Age is a ranking preference. Market eligibility uses the 75 points
+  // of non-age evidence, including zero credit for unavailable liquidity.
+  const evidenceScore=score===null?null:rounded(['relativeValue','correction','momentum','popularity','liquidity'].reduce((sum,key)=>sum+(components[key]??0)*MODEL_WEIGHTS[key],0)/75);
   const meaningfulCorrection = row.drop90<=-18 && row.belowAverage90<=-7;
   const relativeValue = peers.reliable && peers.relative30<=-5 && peers.relative90<=-8;
   const stable = row.change7>=-3 && row.change7<=4 && row.change14>=-6 && row.change14<=8;
@@ -227,7 +231,7 @@ export function assessCatalog(cards, prices, {asOf=new Date(),buyThreshold=MODEL
   let signal='watch',reason='Monitor for stronger relative value and a better entry.',risk='Market estimates can differ from actual Near Mint listings; demand and liquidity are unmeasured.';
   if (qualityWarnings.length) {
    signal='pending';reason=qualityWarnings[0];risk='Missing or unreliable data prevents a trustworthy buying recommendation.';
-  } else if (meaningfulCorrection && relativeValue && stable && !falling && !peers.setDeclining && score>=buyThreshold) {
+  } else if (meaningfulCorrection && relativeValue && stable && !falling && !peers.setDeclining && evidenceScore>=buyThreshold) {
    signal='buy';
    reason=`${Math.abs(row.drop90).toFixed(1)}% below its 90-day high; ${Math.abs(peers.relative30).toFixed(1)} points weaker than comparable cards over 30 days, with a stable last week.`;
    risk='Relative underperformance may reflect weaker demand rather than a bargain. Listing depth and completed sales are unavailable.';
@@ -240,7 +244,7 @@ export function assessCatalog(cards, prices, {asOf=new Date(),buyThreshold=MODEL
   const entryPrice = positive(row.price) ? rounded(Math.min(row.price,(row.average90??row.price)*0.9),2) : null;
   const {baseQualityWarnings,...compact} = card;
   const confidence = !row.verifiedMatch ? 0 : Math.min(85,35+(!row.stale?15:0)+(row.historyEnough?20:0)+(peers.reliable?15:0));
-  return {...compact,signal,score,components,confidence,confidenceLabel:confidence>=80?'Higher':confidence>=50?'Medium':'Low',buyEligible:!qualityWarnings.length&&meaningfulCorrection&&relativeValue&&stable&&!falling&&!peers.setDeclining,reason,risk,entryPrice,entryNote:signal==='wait'?'Watch threshold only; wait for stabilization before considering an entry.':'Watch threshold only; verify actual Near Mint listings and fees.',liquidity:'Unavailable',listings:'Unavailable',salesVolume:'Unavailable',modelVersion:MODEL_VERSION};
+  return {...compact,signal,score,evidenceScore,components,confidence,confidenceLabel:confidence>=80?'Higher':confidence>=50?'Medium':'Low',buyEligible:!qualityWarnings.length&&meaningfulCorrection&&relativeValue&&stable&&!falling&&!peers.setDeclining,reason,risk,entryPrice,entryNote:signal==='wait'?'Watch threshold only; wait for stabilization before considering an entry.':'Watch threshold only; verify actual Near Mint listings and fees.',liquidity:'Unavailable',listings:'Unavailable',salesVolume:'Unavailable',modelVersion:MODEL_VERSION};
  });
 }
 

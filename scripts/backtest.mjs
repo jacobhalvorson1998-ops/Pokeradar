@@ -100,7 +100,7 @@ export function backtest(cards, prices, {asOf=new Date(),horizonDays=30,stepDays
   if (!eligible.length) skipped.noEligibleCards++;
   if (testing) {testSnapshots.push({date,rows:eligible});continue}
   for (const card of eligible) {
-   for (const threshold of thresholds) if (card.signal==='buy' && card.score>=threshold) {
+   for (const threshold of thresholds) if (card.signal==='buy' && card.evidenceScore>=threshold) {
     const trade=getTrade(card,date,`train-new-${threshold}`);
     // Actual exit can be up to three days beyond its target, so enforce maturity again.
     if (trade && trade.exitDate<=splitDay) trainingTrades[threshold].push(trade);
@@ -119,7 +119,7 @@ export function backtest(cards, prices, {asOf=new Date(),horizonDays=30,stepDays
  const threshold=adequate[0]?.threshold??MODEL_DEFAULTS.buyThreshold;
  const testNew=[],testOld=[],testBenchmark=[];
  for (const {date,rows} of testSnapshots) for (const card of rows) {
-  if (card.signal==='buy' && card.score>=threshold) {const trade=getTrade(card,date,'test-new');if(trade)testNew.push(trade)}
+  if (card.signal==='buy' && card.evidenceScore>=threshold) {const trade=getTrade(card,date,'test-new');if(trade)testNew.push(trade)}
   if (oldRecommendation(card,card,{asOf:date}).signal==='buy') {const trade=getTrade(card,date,'test-old');if(trade)testOld.push(trade)}
   const trade=getTrade(card,date,'test-benchmark');if(trade)testBenchmark.push(trade);
  }
@@ -131,11 +131,11 @@ export function backtest(cards, prices, {asOf=new Date(),horizonDays=30,stepDays
   historyStart:first===null?null:iso(first),historyEnd:last===null?null:iso(last),splitDate:splitDay,
   training:{start:first===null?null:iso(first+90*DAY),outcomesThrough:splitDay,thresholds:calibration,previous:summarizeTrades(oldTraining),benchmark:summarizeTrades(benchmarkTraining)},
   testing:{signalsAfter:splitDay,outcomesThrough:last===null?null:iso(last),...results},
-  calibration:{threshold,applied:adequate.length>0,minSignals:minCalibrationSignals,minUniqueCards:10,reason:adequate.length?'Selected only from mature training outcomes; held-out results did not affect selection.':'Too few independent training examples; the 80-point threshold remains provisional.'},
+  calibration:{threshold,applied:adequate.length>0,minSignals:minCalibrationSignals,minUniqueCards:10,metric:'market evidence score, independent of age ranking',reason:adequate.length?'Selected only from mature training outcomes; held-out results did not affect selection.':'Too few independent training examples; the 80-point threshold remains provisional.'},
   methodology:{horizonDays,stepDays,trainingShare,universe:cards.length,pricedHistories:actualHistories.length,signalDates:dates.length,decisionHistoryDays:90,minObservations:28,holdOverlap:'No overlapping holds for the same card in each strategy.',benchmark:'Buy every verified, fresh card across all prices with 90 days of usable history, irrespective of score.',previous:'The prior score and Buy rule, evaluated on the verified, fresh, 90-day-history cohort across all eras; the original algorithm retains its original $100 limit; missing set peers do not exclude the prior model or benchmark.',hitDefinition:`A positive market-price change after ${horizonDays} days; unchanged prices count as failed signals.`,drawdownDefinition:'Largest peak-to-trough market-price decline during each hold.',execution:'Signal-day market estimate to first provider observation on or up to three days after the horizon; no fees or slippage deducted.'},
   skipped,
   caveats:[
-   'Only the default 25% age and collectible-significance profile is evaluated here. Other saved preference profiles have not been separately calibrated.',
+   'Evaluation covers all qualifying market signals, not a budget-constrained portfolio following preference rankings. Age profiles change ranking, not signal eligibility.',
    'Historical screening is not a promise of future returns. The Opportunity Score is not a hit probability.',
    'The catalog and product matches are known today: survivorship, provider coverage and retrospective-match bias remain. Historical unavailable listings cannot be reconstructed.',
    'TickerMint data begins in February 2024, even for cards released in 2008. Coverage and available history may be much shorter.',

@@ -26,7 +26,7 @@ test('age preferences match the requested periods, and cannot alone create Buy N
  const old=assessCatalog(cards,prices,{asOf:date(120)})[0];
  const modern=assessCatalog(cards.map(c=>c.key==='target'?{...c,year:2025}:c),prices,{asOf:date(120)})[0];
  assert.equal(old.signal,'buy');assert.ok(old.score>=80);
- assert.equal(modern.signal,'watch');assert.ok(old.score>modern.score);
+ assert.equal(modern.signal,'buy');assert.ok(old.score>modern.score);assert.equal(old.evidenceScore,modern.evidenceScore);
  const flat=assessCatalog(cards,Object.fromEntries(cards.map(c=>[c.key,quote(history(121,()=>50))])),{asOf:date(120)});
  assert.ok(flat.every(c=>c.signal==='watch'));
 });

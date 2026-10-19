@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import time
+import traceback
 import urllib.request
 from playwright.sync_api import sync_playwright
 base=sys.argv[1].rstrip('/')+'/'
@@ -24,9 +25,10 @@ for attempt in range(6):
             for sid in vintage:
                 page.evaluate('sid=>location.hash="#sets/"+sid',sid)
                 page.wait_for_function('name=>document.querySelector("#selectedSet h1")?.textContent===name',arg=sets[sid]['name'])
-                page.wait_for_function("document.querySelectorAll('.card').length>0")
+                page.wait_for_function("expected=>document.querySelectorAll('.card').length>0&&[...document.querySelectorAll('.card')].every(c=>c.dataset.year===String(expected.year)&&c.querySelector('.set').textContent.includes(expected.name))",arg=sets[sid])
                 assert page.locator('.card[data-year="'+str(sets[sid]['year'])+'"]').count()>0
             page.evaluate('location.hash="#sets/base1"');page.wait_for_function("document.querySelector('#goalTotal')?.textContent==='102'")
+            page.wait_for_function("document.querySelectorAll('.card').length>0&&[...document.querySelectorAll('.card')].every(c=>c.dataset.year==='1999'&&c.querySelector('.set').textContent.includes('Base Set'))")
             assert '1999' in page.locator('#selectedSet').inner_text();page.locator('[data-own]').first.click();page.wait_for_function("document.querySelector('#goalOwned').textContent==='1'")
             page.reload(wait_until='domcontentloaded');page.wait_for_function("document.querySelector('#goalOwned')?.textContent==='1'")
             priced=next(c for c in rows if c['setId']=='base1' and c['hasDetail'] and c['primary'] is not False)
@@ -49,5 +51,8 @@ for attempt in range(6):
             assert not errors,errors;browser.close()
         print(json.dumps({'publicSite':base,'engine':engine,'catalogCards':snapshot['coverage']['baseCards'],'verified':snapshot['coverage']['verified'],'vintageSetsDisplayed':len(vintage),'collectionPersistence':'passed','separateReverseHistory':'passed'}));break
     except Exception:
-        if attempt==5:raise
+        if attempt==5:
+            if os.environ.get('GITHUB_ACTIONS'):
+                trace=traceback.format_exc()[-6000:].replace('%','%25').replace('\r','%0D').replace('\n','%0A');print('::error title=Public browser regression::'+trace)
+            raise
         time.sleep(10)

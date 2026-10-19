@@ -74,3 +74,11 @@ test('promotional stamps stay distinct and foil flags do not invent an unstamped
  const expanded=expandCard(base,detail);assert.equal(expanded[0].variantVerified,false);assert.equal(expanded[0].standardPrintingUnsupported,true);assert.equal(new Set(expanded.map(c=>c.key)).size,expanded.length);
  const mixed=declaredPrintings({variants:{holo:true},variants_detailed:[{type:'holo',thirdParty:{tcgplayer:123}},{type:'holo',stamp:['staff'],thirdParty:{tcgplayer:456}}]});assert.equal(mixed.length,2);assert.notEqual(mixed[0].edition,mixed[1].edition);
 });
+test('modern and vintage cards qualify on the same market evidence, with age affecting ranking only',()=>{
+ const start=Date.UTC(2026,5,1),day=i=>new Date(start+i*86400000).toISOString().slice(0,10),markets={};
+ const cards=['target','p1','p2','p3'].map((key,i)=>({...base,key,id:key,year:2026,rarity:'SIR',sourceRarity:'Special Illustration Rare',printing:'Holofoil',edition:'Standard',hype:98}));
+ cards.forEach((c,index)=>{const history=Array.from({length:131},(_,i)=>[day(i),index?400+index*10:i<105?600:300]);markets[c.key]={productId:100+index,verifiedMatch:true,matchEvidence:'Exact English product fixture',language:'en',printing:'Holofoil',history,price:history.at(-1)[1],asOf:day(130)};});
+ const modern=assessCatalog(cards,markets,{asOf:day(130),buyThreshold:90})[0];assert.equal(modern.signal,'buy');assert(modern.score<80,'Age-weighted preference must not rule out a strong modern signal');assert(modern.evidenceScore>=90);
+ const old=assessCatalog(cards.map(c=>({...c,year:2000})),markets,{asOf:day(130),buyThreshold:90})[0];assert.equal(old.signal,modern.signal);assert(old.score>modern.score);assert.equal(old.evidenceScore,modern.evidenceScore);
+ assert.equal(preferenceScore(modern,{ageWeight:35,significance:'age'}).signal,'buy');
+});
