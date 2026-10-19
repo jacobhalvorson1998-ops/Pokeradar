@@ -23,7 +23,7 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - name: Checkout
         id: checkout
@@ -60,12 +60,9 @@ jobs:
           MAX_RESOLVE_PER_RUN: '5000'
           MAX_HISTORY_PER_RUN: '2000'
           SYNC_BUDGET_MS: '1500000'
-      - name: Evaluate historical signals
-        if: always() && steps.checkout.outcome == 'success'
-        run: node scripts/backtest.mjs
-      - name: Precompute mobile snapshot
-        if: always() && steps.checkout.outcome == 'success'
-        run: node scripts/build.mjs && node scripts/verify-site.mjs
+      # The save helper checkpoints raw progress, rebases it onto latest main,
+      # then evaluates/builds/verifies once. Repeating analysis before this step
+      # wastes the job budget and can time out as the history archive grows.
       - name: Save progress for the next day
         id: progress
         if: always() && steps.checkout.outcome == 'success'
