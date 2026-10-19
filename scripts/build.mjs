@@ -21,7 +21,7 @@ export function build({asOf=new Date().toISOString().slice(0,10)}={}){
  fs.mkdirSync(path.join(root,'site/details'),{recursive:true});const names=new Set();
  for(const row of rows){
   const history=saved.prices[row.key]?.history||[];row.hasDetail=row.verifiedMatch&&history.length>0;
-  row.profiles=PREFERENCE_PROFILES.map(p=>{const r=preferenceScore(row,{...p,buyThreshold});return [r.score,r.signal];});
+  row.profiles=row.score===null?null:PREFERENCE_PROFILES.map(p=>{const r=preferenceScore(row,{...p,buyThreshold});return [r.score,r.signal];});
   if(!row.hasDetail)continue;
   if(!/^[\w.-]+$/.test(row.id))throw Error('Unsafe detail id');names.add(row.id+'.json');
   write('site/details/'+row.id+'.json',{...row,history:history.slice(-120)});

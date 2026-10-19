@@ -46,7 +46,7 @@ These results do **not** demonstrate a reliable accuracy or risk advantage. Thre
 
 ## Speed, automatic updates and checks
 
-The complete initial index is about **657 KiB gzip**, without full histories. The client indexes sets once, renders 18 cards, loads sharp artwork lazily and retrieves a chart only when needed. Saved previews paint immediately, followed by the full IndexedDB snapshot and background refresh. Measured throttled mobile Chromium loading was about **3.1 seconds cold** and **1.4 seconds cached** at 4× CPU slowdown, 80 ms latency and 8 Mbps. These are browser-lab measurements, not physical-iPhone measurements. An optimized historical feature window produced identical results to full-history replay while reducing repeated work.
+The complete initial index is about **647 KiB gzip**, without full histories. The client indexes sets once, renders 18 cards, loads sharp artwork lazily and retrieves a chart only when needed. Saved previews paint immediately, followed by the full IndexedDB snapshot and background refresh. Measured throttled mobile Chromium loading was about **2.5 seconds cold** and **1.1 seconds cached** at 4× CPU slowdown, 80 ms latency and 8 Mbps. These are browser-lab measurements, not physical-iPhone measurements. An optimized historical feature window produced identical results to full-history replay while reducing repeated work.
 
 Daily GitHub Actions remain enabled around **9:18 AM Central in daylight time / 8:18 AM in winter**. Successful catalog and price times, coverage, unmatched records, history and provider errors/rate limits appear in Settings. Scheduled starts may be delayed by GitHub. A green provider run requires actual fresh verified quotes.
 

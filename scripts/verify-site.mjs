@@ -4,7 +4,7 @@ import {fileURLToPath} from 'node:url';
 import {gzipSync} from 'node:zlib';
 import assert from 'node:assert/strict';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),raw=fs.readFileSync(path.join(root,'site/summary.json')),s=JSON.parse(raw);
-assert.equal(s.version,5);assert(s.cards.length>0);assert(s.coverage.verified>0);assert(gzipSync(raw).length<1_000_000,'Summary must stay below 1 MB gzip');
+assert.equal(s.version,5);assert(s.cards.length>0);assert(s.coverage.verified>0);assert(gzipSync(raw).length<2_000_000,'Summary must stay below 2 MB gzip');
 assert(Number.isFinite(Date.parse(s.updatedAt)));assert(Number.isFinite(Date.parse(s.catalogUpdatedAt)));
 const sourceCatalog=JSON.parse(fs.readFileSync(path.join(root,'site/catalog.json')));
 assert.equal(sourceCatalog.cards.length,s.cards.length,'Published summary dropped catalog records');

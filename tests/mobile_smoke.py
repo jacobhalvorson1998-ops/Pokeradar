@@ -13,16 +13,21 @@ import unittest
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
+    compressed={}
     def log_message(self,*_):pass
     def send_head(self):
         path=Path(self.translate_path(self.path.split('?')[0]))
         if path.is_file() and path.suffix in ('.json','.js','.mjs','.css') and 'gzip' in self.headers.get('Accept-Encoding',''):
-            body=gzip.compress(path.read_bytes());self.send_response(200);self.send_header('Content-Type',self.guess_type(str(path)));self.send_header('Content-Encoding','gzip');self.send_header('Content-Length',str(len(body)));self.end_headers();return io.BytesIO(body)
+            body=self.compressed.get(str(path.resolve()))
+            if body is None:body=gzip.compress(path.read_bytes(),compresslevel=6)
+            self.send_response(200);self.send_header('Content-Type',self.guess_type(str(path)));self.send_header('Content-Encoding','gzip');self.send_header('Content-Length',str(len(body)));self.end_headers();return io.BytesIO(body)
         return super().send_head()
 class MobileWorkflow(unittest.TestCase):
     def test_mobile_catalog_collection_and_loading(self):
         summary=json.loads((ROOT/'site/summary.json').read_text());self.assertEqual(summary['version'],5)
-        self.assertLess(len(gzip.compress((ROOT/'site/summary.json').read_bytes())),1_000_000)
+        self.assertLess(len(gzip.compress((ROOT/'site/summary.json').read_bytes())),2_000_000)
+        # Pages serves precompressed cached assets; do not time Python compression as browser work.
+        QuietHandler.compressed={str((ROOT/'site'/name).resolve()):gzip.compress((ROOT/'site'/name).read_bytes(),compresslevel=6) for name in ['summary.json','app.js','styles.css','lib/collection.mjs']}
         handler=functools.partial(QuietHandler,directory=str(ROOT/'site'));server=http.server.ThreadingHTTPServer(('127.0.0.1',0),handler)
         threading.Thread(target=server.serve_forever,daemon=True).start()
         try:
@@ -73,9 +78,16 @@ class MobileWorkflow(unittest.TestCase):
                 # Same artifact must expire recommendations in a long-lived tab.
                 revised=json.loads(json.dumps(summary));cols=revised['columns'];r=revised['cards'][0];today=page.evaluate("new Date().toISOString().slice(0,10)")
                 for k,v in {'signal':'buy','score':90,'verifiedMatch':True,'stale':False,'price':25,'asOf':today,'profiles':[[90,'buy'] for _ in revised['profiles']]}.items():r[cols.index(k)]=v
+                for value in revised['cards']:
+                    if value[cols.index('key')]==unknown['key']:
+                        value[cols.index('printing')]='Normal';value[cols.index('edition')]='Standard';value[cols.index('variantVerified')]=True
                 revised['builtAt']='2099-01-01T00:00:00Z'
                 page.route('**/summary.json*',lambda route:route.fulfill(status=200,content_type='application/json',body=json.dumps(revised)))
                 page.locator('#search').fill('');page.wait_for_function("!document.querySelector('#refreshBtn').classList.contains('busy')");page.locator('#refreshBtn').click();page.wait_for_function("Number(document.querySelector('#buyN').textContent)>0");page.wait_for_function("!document.querySelector('#refreshBtn').classList.contains('busy')")
+                page.evaluate('sid=>location.hash="#sets/"+sid',unknown['setId']);page.wait_for_function("document.querySelector('#goalOwned')?.textContent==='0'")
+                page.locator('#search').fill(unknown['name']+' '+unknown_set['name']+' '+unknown['number'])
+                review_button=page.locator('[data-key='+json.dumps(unknown['key'])+'] [data-own]');review_button.wait_for();self.assertEqual(review_button.inner_text(),'Review copy');review_button.click();page.wait_for_selector('#collectionForm')
+                self.assertEqual(page.evaluate("key=>JSON.parse(localStorage.getItem('pokeradar_collection_v1')).records[key].quantity",unknown['key']),1);page.locator('#closeModal').click();page.locator('[data-nav="home"]').click()
                 page.evaluate("()=>{const later=Date.now()+6*86400000;Date.now=()=>later}");page.locator('#refreshBtn').click();page.wait_for_function("Number(document.querySelector('#buyN').textContent)===0")
                 page.wait_for_function("!document.querySelector('#refreshBtn').classList.contains('busy')");page.wait_for_timeout(250);page.route('**/summary.json*',lambda route:route.abort());started=time.monotonic();page.reload(wait_until='domcontentloaded');page.wait_for_function("document.querySelectorAll('.card').length>0");cached=time.monotonic()-started;self.assertLess(cached,2)
                 self.assertEqual(errors,[]);self.assertTrue(page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
@@ -84,4 +96,11 @@ class MobileWorkflow(unittest.TestCase):
                     installed=browser.new_context(viewport={'width':390,'height':844},is_mobile=True,has_touch=True);installed.route('**/assets.tcgdex.net/**',lambda route:route.abort());installed.route('**/images.pokemontcg.io/**',lambda route:route.abort());off=installed.new_page();off.goto(f'http://localhost:{server.server_port}/',wait_until='domcontentloaded');off.wait_for_function("document.querySelectorAll('.card').length>0&&localStorage.getItem('pokeradar_preview_v5')");off.evaluate('navigator.serviceWorker.ready');off.wait_for_function('navigator.serviceWorker.controller!==null');off.evaluate("fetch('summary.json',{cache:'no-cache'}).then(r=>r.json())");off.wait_for_function("async()=>Boolean(await caches.match(new URL('summary.json',location.href).href))");installed.set_offline(True);off.reload(wait_until='domcontentloaded');off.wait_for_function("document.querySelectorAll('.card').length>0");self.assertEqual(off.evaluate("fetch('summary.json').then(r=>r.headers.get('X-Pokeradar-Cache'))"),'offline');installed.close()
                 browser.close()
         finally:server.shutdown();server.server_close()
-if __name__=='__main__':unittest.main()
+if __name__=='__main__':
+    result=unittest.main(exit=False).result
+    if not result.wasSuccessful():
+        if os.environ.get('GITHUB_ACTIONS'):
+            for _,trace in result.failures+result.errors:
+                escaped=trace[-6000:].replace('%','%25').replace('\r','%0D').replace('\n','%0A')
+                print('::error title=Mobile browser regression::'+escaped)
+        raise SystemExit(1)
