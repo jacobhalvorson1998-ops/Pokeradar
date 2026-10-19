@@ -35,3 +35,8 @@ test('aggregate replay ignores future observations and reports unchanged researc
 test('coverage priority places vintage holos and editions ahead of personal modern requests',()=>{
  const vintage=cards[0],edition={...cards[1],key:'edition',year:2001,rarity:'Common',hype:10,edition:'First Edition'},wanted={...cards[2],key:'wanted',year:2025,hype:50,rarity:'Common'},chase={...cards[3],key:'chase',year:2025,hype:95},ordinary={...cards[4],key:'ordinary',year:2025,hype:10,rarity:'Common'};assert.deepEqual(priorityOrder([ordinary,chase,wanted,edition,vintage],{},['wanted'],asOf).map(c=>c.key),[vintage.key,'edition','wanted','chase','ordinary']);
 });
+
+test('unreleased or otherwise invalid cards cannot contribute to historical set trends',()=>{
+ const future=cards.map(c=>({...c,id:c.id+'-future',key:c.key+'-future',baseId:c.baseId+'-future',year:2027,releaseDate:'2027-01-01'})),p=prices();for(const c of future)p[c.key]=quote(c,i=>i<170?10:1000);
+ const r=assessMarketCatalog([...cards,...future],p,{asOf})[0];assert.equal(r.setTrend.count,12);assert.equal(r.setTrend.change30,0);assert.ok(assessMarketCatalog([...cards,...future],p,{asOf}).filter(c=>c.year===2027).every(c=>c.score===null));
+});
