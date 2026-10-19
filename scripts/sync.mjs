@@ -289,7 +289,8 @@ export async function updatePrices(catalog, {client, report}) {
     try {
       const previous = prices[card.key] || {};
       // Existing explicitly verified variant remains fixed; legacy aggregates are re-derived.
-      const binding=resolveVintagePrinting(card,raw,catalog);if(binding){printingBindings[card.baseId||card.id]=binding;card.printing=binding.printing;card.edition=binding.edition;card.variantEvidence=binding.evidence;}
+      const providerIdentity=cachedProducts.get(resolution.productId);
+      const binding=providerIdentity&&verifyTickerProduct(providerIdentity,card).ok?resolveVintagePrinting(card,raw,catalog):null;if(binding){printingBindings[card.baseId||card.id]=binding;card.printing=binding.printing;card.edition=binding.edition;card.variantEvidence=binding.evidence;}
       const chosen = parseHistoryForPrinting(raw, card.variantVerified ? card.printing : previous.printing || null);
       if (!chosen.points.length) { historyStatus[card.key] = resolutionFailure(historyStatus[card.key], chosen.reason); report.priceErrors++; console.warn(`HISTORY ${card.key}: ${chosen.reason}; saved price preserved`); return; }
       const [providerDay, providerPrice] = chosen.points.at(-1);

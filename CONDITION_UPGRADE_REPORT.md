@@ -42,4 +42,4 @@ Scrydex and JustTCG official docs/pricing/terms returned HTTP 403 here; actual v
 
 ## Validation
 
-Validation results and deployment evidence are recorded after the final mobile and public checks complete. Synthetic source/price fixtures run only inside tests and never enter site data.
+Local validation passes 81 unit tests and the mobile Chromium collection, Vendor and condition/page-size workflows. The native Chromium/WebKit branch and public deployment results are recorded after publication. Synthetic source/price fixtures run only inside tests and never enter site data.
