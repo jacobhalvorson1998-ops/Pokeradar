@@ -30,7 +30,7 @@ export const owned=(collection,card)=>{const r=collection.records[card.key];retu
 export function goalCards(cards,goal='standard'){
  if(goal==='standard')return cards.filter(c=>c.primary!==false);
  if(goal==='master')return cards.filter(c=>c.primary!==false||(c.variantVerified&&['Standard','Unlimited'].includes(c.edition)&&['Normal','Holofoil','Reverse Holofoil'].includes(c.printing)));
- if(goal==='first')return cards.filter(c=>c.variantVerified&&c.edition==='First Edition');
+ if(goal==='first')return cards.filter(c=>c.variantVerified&&String(c.edition).startsWith('First Edition'));
  if(goal==='shadowless')return cards.filter(c=>c.variantVerified&&c.edition==='Shadowless');
  return cards.filter(c=>c.variantVerified&&!['Standard','Unlimited'].includes(c.edition));
 }

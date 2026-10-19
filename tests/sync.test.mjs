@@ -33,3 +33,9 @@ test('all English rarities and 1999 Base Set are included',()=>{
  assert.equal(fromBrief({id:'base1-55',localId:'55',name:'Nidoran'},set,'Common').rarity,'Standard');
  assert.equal(fromBrief({id:'base1-100',localId:'100',name:'Lightning Energy'},set,null).rarity,'Unclassified');
 });
+test('older holo and shiny subseries never inherit an invented main-set denominator',()=>{
+ const set={id:'ecard3',name:'Skyridge',releaseDate:'2003-05-12',cardCount:{official:144}};
+ assert.equal(fromBrief({id:'ecard3-H1',localId:'H1',name:'Alakazam'},set,'Rare Holo').number,'H1');
+ assert.equal(fromBrief({id:'pl1-SH4',localId:'SH4',name:'Lotad'},set,'Shiny Rare').number,'SH4');
+ assert.equal(fromBrief({id:'bw11-RC1',localId:'RC1',name:'Ursaring'},set,'Rare').number,'RC1');
+});

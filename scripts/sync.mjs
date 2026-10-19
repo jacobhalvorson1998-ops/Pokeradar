@@ -40,9 +40,9 @@ export function fromBrief(card, set, rarity) {
   const official = Number(set.cardCount?.official || set.cardCount?.printed || 0);
   const local = String(card.localId || '');
   const prefix = local.match(/^(GG|TG|SV)/i)?.[1] || '';
-  // Embedded Radiant Collections have their own denominators; a local ID
+  // Embedded holo, shiny and Radiant Collections have their own numbering; a local ID
   // remains honest until provider metadata supplies the printed denominator.
-  const number = /^RC/i.test(local) ? local : official ? `${local}/${prefix}${official}` : local;
+  const number = /^(?:RC|SH|H)\d/i.test(local) ? local : official ? `${local}/${prefix}${official}` : local;
   const category = classifyRarity(rarity, local, set.name, year) || (rarity ? 'Standard' : 'Unclassified');
   return {key: setKey(set.name, number), id: card.id, name: card.name, set: set.name, setId: set.id, number, year, releaseDate: set.releaseDate, rarity: category, sourceRarity: rarity || null, language: 'en', hype: fanProxy(card.name), image: card.image ? `${String(card.image).replace(/\/$/, '')}/low.webp` : ''};
 }
@@ -310,7 +310,8 @@ export async function updatePrices(catalog, {client, report}) {
     } catch (error) { if (error instanceof BudgetExceeded) throw error; historyStatus[card.key] = resolutionFailure(historyStatus[card.key], error.message, {transient: true}); report.priceErrors++; console.warn(`price/history failed ${card.key}: ${error.message}; existing verified data preserved`); }
   };
   const historyGroups=new Map();
-  for(const card of historyTargets.slice(0,bounded('MAX_HISTORY_PER_RUN',2000,10000))){const id=ids[card.key].productId;if(!historyGroups.has(id))historyGroups.set(id,[]);historyGroups.get(id).push(card);}
+  const historyReadLimit=bounded('MAX_HISTORY_PER_RUN',2000,10000);
+  for(const card of historyTargets){const id=ids[card.key].productId;if(!historyGroups.has(id)){if(historyGroups.size>=historyReadLimit)continue;historyGroups.set(id,[]);}historyGroups.get(id).push(card);}
   await pooled([...historyGroups.entries()],4,async([productId,cards])=>{
     const raw=await client.get(`${PRICE_URL}/products/${productId}/prices`);
     for(const card of cards)await saveHistory(card,raw);

@@ -68,3 +68,9 @@ test('unpriced cards with unconfirmed printing can be owned without inventing va
  assert.equal(completion([card],c,'standard').owned,1);assert.equal(completion([card],c,'standard').cost,0);assert.equal(c.records[card.key].quantity,1);
  assert.equal(completion([{...card,printing:'Holofoil',edition:'Unlimited'}],c,'standard').owned,0,'Later printing confirmation requires review rather than silent reassignment');
 });
+test('promotional stamps stay distinct and foil flags do not invent an unstamped printing',()=>{
+ const detail={variants:{holo:true},variants_detailed:[{type:'holo',stamp:['pokemon-center'],size:'standard',thirdParty:{tcgplayer:123}},{type:'holo',stamp:['staff'],size:'standard',thirdParty:{tcgplayer:456}}]};
+ const declared=declaredPrintings(detail);assert.equal(declared.length,2);assert(declared.every(v=>v.edition.startsWith('Stamped:')));assert(!declared.some(v=>v.edition==='Standard'));
+ const expanded=expandCard(base,detail);assert.equal(expanded[0].variantVerified,false);assert.equal(expanded[0].standardPrintingUnsupported,true);assert.equal(new Set(expanded.map(c=>c.key)).size,expanded.length);
+ const mixed=declaredPrintings({variants:{holo:true},variants_detailed:[{type:'holo',thirdParty:{tcgplayer:123}},{type:'holo',stamp:['staff'],thirdParty:{tcgplayer:456}}]});assert.equal(mixed.length,2);assert.notEqual(mixed[0].edition,mixed[1].edition);
+});

@@ -33,25 +33,26 @@ export function declaredPrintings(detail={}){
  for(const entry of detail.variants_detailed||[]){
   if(entry.size&&entry.size!=='standard')continue;
   const type={normal:'Normal',holo:'Holofoil',reverse:'Reverse Holofoil'}[entry.type];if(!type)continue;
-  const first=(entry.stamp||[]).includes('1st-edition');
-  const edition=first?'First Edition':entry.subtype==='shadowless'?'Shadowless':entry.subtype==='unlimited'?'Unlimited':entry.subtype&&entry.subtype!=='standard'?entry.subtype:'Standard';
+  const stamps=Array.isArray(entry.stamp)?entry.stamp:entry.stamp?[entry.stamp]:[];
+  const first=stamps.includes('1st-edition'),otherStamps=stamps.filter(s=>s!=='1st-edition');
+  const edition=otherStamps.length?(first?'First Edition · ':'Stamped: ')+otherStamps.join(' + '):first?'First Edition':entry.subtype==='shadowless'?'Shadowless':entry.subtype==='unlimited'?'Unlimited':entry.subtype&&entry.subtype!=='standard'?entry.subtype:'Standard';
   const printing=first?`1st Edition ${type}`:edition==='Shadowless'?`Unlimited ${type}`:type;
-  add(printing,edition,{foil:type,tcgplayerProductId:Number(entry.thirdParty?.tcgplayer)||null,subtype:entry.subtype||null});
+  add(printing,edition,{foil:type,tcgplayerProductId:Number(entry.thirdParty?.tcgplayer)||null,stamps,subtype:entry.subtype||null});
  }
  // Boolean flags prove individual foil treatments; they do not prove edition combinations.
  for(const [flag,printing]of [['normal','Normal'],['holo','Holofoil'],['reverse','Reverse Holofoil']]){
   if(detail.variants?.[flag]!==true)continue;
-  if(![...found.values()].some(v=>v.printing===printing&&['Unlimited','Standard'].includes(v.edition)))add(printing,'Standard',{foil:printing});
+  if(![...found.values()].some(v=>(v.foil===printing||v.printing===printing)))add(printing,'Standard',{foil:printing});
  }
  return [...found.values()];
 }
 export function expandCard(card,detail={},market={}){
- const canonical={...card,printing:null,edition:'Unconfirmed',variantVerified:false,variantEvidence:null,priceIdentityAmbiguous:false,tcgplayerProductId:null,foil:null,subtype:null};
+ const canonical={...card,printing:null,edition:'Unconfirmed',variantVerified:false,variantEvidence:null,priceIdentityAmbiguous:false,tcgplayerProductId:null,foil:null,subtype:null,stamps:[],standardPrintingUnsupported:false};
  const declarations=declaredPrintings(detail);
  for(const v of declarations)if(v.tcgplayerProductId&&declarations.some(other=>other!==v&&other.tcgplayerProductId===v.tcgplayerProductId&&other.printing===v.printing&&other.edition!==v.edition))v.priceIdentityAmbiguous=true;
  const eligible=declarations.filter(v=>['Standard','Unlimited'].includes(v.edition));
- const primary=eligible.find(v=>v.printing===market.printing)||eligible.find(v=>v.printing==='Holofoil')||eligible.find(v=>v.printing==='Normal')||eligible[0];
- const base={...canonical,baseId:card.id,baseKey:card.key,primary:true,...(primary||{printing:null,edition:'Unconfirmed',variantVerified:false,variantEvidence:null}),variantMetadataChecked:!!detail.checkedAt};
+ const primary=eligible.find(v=>v.printing===market.printing)||eligible.find(v=>v.printing==='Holofoil')||eligible.find(v=>v.printing==='Normal')||eligible[0]||(declarations.length===1?declarations[0]:null);
+ const base={...canonical,standardPrintingUnsupported:declarations.length>0&&!primary,baseId:card.id,baseKey:card.key,primary:true,...(primary||{printing:null,edition:'Unconfirmed',variantVerified:false,variantEvidence:null}),variantMetadataChecked:!!detail.checkedAt};
  const variants=[base];
  for(const variant of declarations){if(variant===primary)continue;const suffix=slug(variant.edition+'-'+variant.printing);variants.push({...canonical,...variant,id:card.id+'--'+suffix,key:card.key+'::'+suffix,baseId:card.id,baseKey:card.key,primary:false,variantMetadataChecked:true});}
  return variants;

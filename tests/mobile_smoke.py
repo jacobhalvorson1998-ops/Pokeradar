@@ -53,6 +53,11 @@ class MobileWorkflow(unittest.TestCase):
                 record=page.evaluate("key=>JSON.parse(localStorage.getItem('pokeradar_collection_v1')).records[key]",key);self.assertEqual(record['quantity'],2);self.assertEqual(record['condition'],'LP');self.assertEqual(record['entryPrice'],40)
                 page.locator('#setGoal').select_option('first');page.wait_for_function("document.querySelector('#setGoal').value==='first'");self.assertTrue(page.locator('.card[data-printing*="1st Edition"]').count()>0);self.assertEqual(page.locator('#goalOwned').inner_text(),'0')
                 page.evaluate("location.hash='#sets/lc'");page.wait_for_function("document.querySelector('#goalTotal')?.textContent==='110'");page.locator('#setGoal').select_option('master');page.wait_for_function("Number(document.querySelector('#goalTotal').textContent)>110")
+                unknown=next(dict(zip(summary['columns'],r)) for r in summary['cards'] if not r[summary['columns'].index('printing')] and not r[summary['columns'].index('verifiedMatch')] and r[summary['columns'].index('primary')] is not False and (next(s['year'] for s in summary['sets'] if s['id']==r[summary['columns'].index('setId')]) or 0)>=2013)
+                unknown_set=next(s for s in summary['sets'] if s['id']==unknown['setId'])
+                page.evaluate('sid=>location.hash="#sets/"+sid',unknown['setId']);page.wait_for_function('name=>document.querySelector("#selectedSet h1")?.textContent===name',arg=unknown_set['name'])
+                page.locator('#search').fill(unknown['name']+' '+unknown_set['name']+' '+unknown['number'])
+                page.locator('[data-key='+json.dumps(unknown['key'])+'] [data-own]').click();page.wait_for_function("document.querySelector('#goalOwned').textContent==='1'")
                 page.locator('[data-nav="settings"]').click();page.locator('#ageWeight').select_option('35');page.locator('#significance').select_option('age');
                 with page.expect_download() as download:page.locator('#settingsPanel [data-action="export"]').click()
                 csv=Path(tmp)/'backup.csv';download.value.save_as(csv);self.assertIn('Favorite vintage card',csv.read_text());page.locator('#csvImport').set_input_files(csv);page.wait_for_function("document.querySelector('#toast').textContent.includes('Imported')")

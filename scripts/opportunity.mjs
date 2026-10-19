@@ -114,6 +114,7 @@ export function marketMetrics(market={}, {asOf=new Date(),maxStaleDays=MODEL_DEF
 
 function identityWarningsFor(card,market) {
  const warnings = [];
+ if(card.standardPrintingUnsupported)warnings.push('A default standard printing has not been verified; choose a declared edition.');
  if(card.priceIdentityAmbiguous)warnings.push('Provider prices cannot distinguish these edition variants.');
  if(card.primary===false&&!['Standard','Unlimited'].includes(card.edition)&&!card.tcgplayerProductId)warnings.push('Special edition lacks an authoritative product binding.');
  if (market.verifiedMatch!==true || !Number.isSafeInteger(market.productId) || market.productId<1) warnings.push('Card and printing have not been verified against a provider product.');
@@ -124,7 +125,7 @@ function identityWarningsFor(card,market) {
  if (market.condition && !/^(raw|nm|near mint)$/i.test(market.condition)) warnings.push('Price condition does not match raw Near Mint screening.');
  if (!['Holofoil','Normal'].includes(market.printing) && !(card.variantVerified && card.printing===market.printing)) warnings.push('An exact declared printing price has not been verified.');
  if (card.variantVerified && card.printing && card.printing!==market.printing) warnings.push('Price is for a different foil or edition printing.');
- if (['First Edition','Shadowless'].includes(card.edition) && market.edition!==card.edition) warnings.push('Edition-specific identity has not been verified.');
+ if (((card.edition&&!['Standard','Unlimited','Unconfirmed'].includes(card.edition))||(market.edition&&!['Standard','Unlimited','Unconfirmed'].includes(market.edition))) && market.edition!==card.edition) warnings.push('Edition-specific identity has not been verified.');
  if (typeof market.matchEvidence!=='string' || !market.matchEvidence.trim()) warnings.push('Exact product-matching evidence has not been recorded.');
  return warnings;
 }
