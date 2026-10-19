@@ -15,7 +15,7 @@ function prepareCard(card,mutate=false){
  const profile=(state.snapshot?.profiles||[]).findIndex(p=>p.ageWeight===state.prefs.ageWeight&&p.significance===state.prefs.significance),choice=card.profiles?.[profile];
  const date=/^\d{4}-\d{2}-\d{2}$/.test(card.asOf||'')?Date.parse(card.asOf+'T00:00:00Z'):NaN;
  const stale=card.stale||!Number.isFinite(date)||Math.floor(Date.now()/86400000)-Math.floor(date/86400000)>4||date>Date.now();
- const result=mutate?card:{...card};if(choice){result.score=choice[0];result.signal=choice[1];}result.stale=stale;result._key=card.key;result._search=`${card.name} ${card.set} ${card.number} ${card.year} ${card.rarity} ${card.printing||''} ${card.edition||''}`.toLowerCase();
+ const result=mutate?card:{...card};if(choice){result.score=choice[0];result.signal=choice[1];}result.stale=stale;if(result.signal==='buy'&&(!Number.isFinite(card.evidenceScore)||card.evidenceScore<Math.max(90,state.snapshot?.buyThreshold||90))){result.signal='pending';result.primaryFailure='evidence';result.reason='The cached recommendation needs the latest research snapshot. Saved prices and ownership are retained.';result.investigate=false;}result._key=card.key;result._search=`${card.name} ${card.set} ${card.number} ${card.year} ${card.rarity} ${card.printing||''} ${card.edition||''}`.toLowerCase();
  if(!card.verifiedMatch){result.price=null;result.entryPrice=null;}
  if(stale||!card.verifiedMatch){result.investigate=false;result.signal='pending';result.score=null;if(stale){result.primaryFailure='fresh';result.failureReasons=[...new Set(['fresh',...(result.failureReasons||[])])];result.reason='A recent verified price is needed. Saved observations remain visible.';}}
  if(result.signal==='pending')result.entryPrice=null;

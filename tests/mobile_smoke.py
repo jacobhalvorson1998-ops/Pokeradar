@@ -77,7 +77,7 @@ class MobileWorkflow(unittest.TestCase):
                 page.locator('[data-key='+json.dumps(detail_card['key'])+'] [data-detail]').first.click();page.wait_for_function("document.querySelector('#detailChart svg')!==null");self.assertTrue(any('/details/'in r for r in requests));page.locator('#closeModal').click()
                 # Same artifact must expire recommendations in a long-lived tab.
                 revised=json.loads(json.dumps(summary));cols=revised['columns'];r=revised['cards'][0];today=page.evaluate("new Date().toISOString().slice(0,10)")
-                for k,v in {'signal':'buy','score':90,'verifiedMatch':True,'stale':False,'price':25,'asOf':today,'profiles':[[90,'buy'] for _ in revised['profiles']]}.items():r[cols.index(k)]=v
+                for k,v in {'signal':'buy','score':90,'evidenceScore':95,'verifiedMatch':True,'stale':False,'price':25,'asOf':today,'profiles':[[90,'buy'] for _ in revised['profiles']]}.items():r[cols.index(k)]=v
                 for value in revised['cards']:
                     if value[cols.index('key')]==unknown['key']:
                         value[cols.index('printing')]='Normal';value[cols.index('edition')]='Standard';value[cols.index('variantVerified')]=True
