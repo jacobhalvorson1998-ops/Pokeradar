@@ -3,6 +3,7 @@
  * the screener. Chronological training outcomes must mature before test starts.
  */
 import {auditVintage} from './vintage-audit.mjs';
+import {scoreMarketRows,AGGREGATE_MODEL,OPPORTUNITY_WEIGHTS,OPPORTUNITY_POLICY} from './aggregate-model.mjs';
 import {DEPLOYED_BUY_THRESHOLD} from './model-policy.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -24,8 +25,8 @@ export function summarizeTrades(trades) {
   failed:failures.length,flat:trades.filter(trade=>trade.returnPct===0).length,
   hitRate:trades.length?round(trades.filter(trade=>trade.returnPct>0).length/trades.length*100):null,
   averageReturn:trades.length?round(returns.reduce((a,b)=>a+b,0)/trades.length):null,
-  medianReturn:round(median(returns)),worstReturn:trades.length?round(Math.min(...returns)):null,
-  worstDrawdown:trades.length?round(Math.min(...trades.map(trade=>trade.drawdownPct))):null,
+  medianReturn:round(median(returns)),worstReturn:trades.length?round(returns.reduce((a,b)=>Math.min(a,b),Infinity)):null,
+  worstDrawdown:trades.length?round(trades.reduce((a,t)=>Math.min(a,t.drawdownPct),Infinity)):null,
   averageDrawdown:trades.length?round(trades.reduce((sum,trade)=>sum+trade.drawdownPct,0)/trades.length):null,
   uniqueCards:new Set(trades.map(trade=>trade.key)).size,
   failedSignals:failures.slice().sort((a,b)=>a.returnPct-b.returnPct).slice(0,20),
@@ -64,7 +65,7 @@ export function backtest(cards, prices, {asOf=new Date(),horizonDays=30,stepDays
  const actualHistories=[...histories.values()].filter(history=>history.length);
  const starts=actualHistories.map(history=>epoch(history[0][0]));
  const ends=actualHistories.map(history=>epoch(history.at(-1)[0]));
- const first=starts.length?Math.min(...starts):null,last=ends.length?Math.min(epoch(cutoff),Math.max(...ends)):null;
+ const first=starts.length?starts.reduce((a,b)=>Math.min(a,b),Infinity):null,last=ends.length?Math.min(epoch(cutoff),ends.reduce((a,b)=>Math.max(a,b),-Infinity)):null;
  const split=first!==null && last!==null ? first+Math.floor((last-first)*trainingShare/DAY)*DAY : null;
  const splitDay=split===null?null:iso(split);
  const thresholds=[80,85,90];
@@ -77,6 +78,7 @@ export function backtest(cards, prices, {asOf=new Date(),horizonDays=30,stepDays
  ];
  const sensitivity=Object.fromEntries(researchVariants.map(v=>[v.id,{training:[],testing:[],eligibleDecisions:0,qualifyingDecisions:0,signalDates:new Set()}]));
  const collectSensitivity=(card,date,period)=>{for(const variant of researchVariants){const result=sensitivity[variant.id];if(period==='testing')result.eligibleDecisions++;if(!variant.accept(card))continue;if(period==='testing'){result.qualifyingDecisions++;result.signalDates.add(date);}const t=getTrade(card,date,period+'-research-'+variant.id);if(t&&(period!=='training'||t.exitDate<=splitDay))result[period].push(t);}};
+ const aggregateBands=[70,75,80].map(threshold=>({threshold,training:[],testing:[]}));
  const trainingTrades=Object.fromEntries(thresholds.map(threshold=>[threshold,[]]));
  const oldTraining=[],benchmarkTraining=[];
  const testSnapshots=[];
@@ -108,6 +110,9 @@ export function backtest(cards, prices, {asOf=new Date(),horizonDays=30,stepDays
    datedMarkets[card.key]={...markets[card.key],history:history.slice(first,end)};
   }
   const rows=assessCatalog(candidates,datedMarkets,{asOf:date});
+  const setTotals=new Map();for(const c of cards)if(c.primary!==false&&c.year<=Number(date.slice(0,4))&&(!c.releaseDate||c.releaseDate<=date)){const k=c.setId||c.set;setTotals.set(k,(setTotals.get(k)||0)+1);}
+  const marketRows=scoreMarketRows(rows,{setTotals});
+  for(const c of marketRows)if(c.buyEligible)for(const band of aggregateBands)if(c.score>=band.threshold){const period=training?'training':'testing',trade=getTrade(c,date,`aggregate-${period}-${band.threshold}`);if(trade&&(!training||trade.exitDate<=splitDay))band[period].push({...trade,category:c.category});}
   const eligible=rows.filter(card=>card.verifiedMatch && !card.stale && card.historyEnough && card.price>0 && card.year>0 && card.year<=Number(date.slice(0,4)) && !(card.releaseDate && card.releaseDate>date) && card.qualityWarnings.every(warning=>warning.startsWith('Only ')));
   if (!eligible.length) skipped.noEligibleCards++;
   if (testing) {testSnapshots.push({date,rows:eligible});continue}
@@ -149,6 +154,7 @@ export function backtest(cards, prices, {asOf=new Date(),horizonDays=30,stepDays
   calibration:{threshold,candidateThreshold,retained:retainedThreshold!==null,applied:retainedThreshold!==null||adequate.length>0,minSignals:minCalibrationSignals,minUniqueCards:10,metric:'market evidence score, independent of age ranking',reason:retainedThreshold!==null?`Retained the previously deployed strict threshold ${retainedThreshold}; training-only sensitivity candidate ${candidateThreshold} does not automatically replace production policy.`:adequate.length?'Selected only from mature training outcomes; held-out results did not affect selection.':'Too few independent training examples; the 80-point threshold remains provisional.'},
   methodology:{horizonDays,stepDays,trainingShare,universe:cards.length,pricedHistories:actualHistories.length,signalDates:dates.length,decisionHistoryDays:90,minObservations:28,holdOverlap:'No overlapping holds for the same card in each strategy.',benchmark:'Buy every verified, fresh card across all prices with 90 days of usable history, irrespective of score.',previous:'The prior score and Buy rule, evaluated on the verified, fresh, 90-day-history cohort across all eras; the original algorithm retains its original $100 limit; missing set peers do not exclude the prior model or benchmark.',hitDefinition:`A positive market-price change after ${horizonDays} days; unchanged prices count as failed signals.`,drawdownDefinition:'Largest peak-to-trough market-price decline during each hold.',execution:'Signal-day market estimate to first provider observation on or up to three days after the horizon; no fees or slippage deducted.'},
   sensitivity:{deployment:'Strict production gates retained. Alternative gates are research-only; held-out outcomes do not change the deployed rule.',variants:researchVariants.map(v=>{const r=sensitivity[v.id],windows=new Map();for(const t of r.testing){const i=Math.floor((epoch(t.signalDate)-split)/(90*DAY));if(!windows.has(i))windows.set(i,[]);windows.get(i).push(t);}return {id:v.id,label:v.label,training:summarizeTrades(r.training),testing:summarizeTrades(r.testing),eligibleDecisions:r.eligibleDecisions,qualifyingDecisions:r.qualifyingDecisions,per1000EligibleDecisions:r.eligibleDecisions?round(r.qualifyingDecisions/r.eligibleDecisions*1000):null,signalDates:r.signalDates.size,rollingWindows:[...windows].map(([i,trades])=>({from:iso(split+i*90*DAY),through:iso(Math.min(last,split+(i+1)*90*DAY- DAY)),...summarizeTrades(trades)}))};})},
+  aggregateResearch:{modelVersion:AGGREGATE_MODEL,weights:OPPORTUNITY_WEIGHTS,policy:OPPORTUNITY_POLICY,thresholdSelection:'70 candidate / 80 strong are declared research bands evaluated unchanged; the held-out results were not used to tune them.',setCoverage:'At least 10 default printings and 30% of released catalog; small sets require 3 and 60%. Same quality gates as production.',bands:aggregateBands.map(b=>({threshold:b.threshold,training:summarizeTrades(b.training),testing:summarizeTrades(b.testing)})),status:aggregateBands[0].testing.length>=30&&new Set(aggregateBands[0].testing.map(t=>t.key)).size>=10?'limited-historical-evaluation':'insufficient-independent-buying-signals',interpretation:'Historical aggregate market changes exclude fees, taxes, shipping, slippage and condition differences. These results do not validate profit, liquidity, or an investment edge.'},
   skipped,
   caveats:[
    'Evaluation covers all qualifying market signals, not a budget-constrained portfolio following preference rankings. Age profiles change ranking, not signal eligibility.',
@@ -187,7 +193,8 @@ if (process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta
  const report=backtest(cards,prices,{retainedThreshold:DEPLOYED_BUY_THRESHOLD});
  const output=process.env.BACKTEST_OUTPUT||path.join(ROOT,'site/evaluation.json');
  fs.mkdirSync(path.dirname(output),{recursive:true});
- fs.writeFileSync(output,JSON.stringify(report)+'\n');
+ fs.writeFileSync(output+'.tmp',JSON.stringify(report)+'\n');
+ fs.renameSync(output+'.tmp',output);
  console.log(`Backtest: ${report.historyStart??'no history'} to ${report.historyEnd??'no history'}; chronological split ${report.splitDate??'unavailable'}; ${report.testing.opportunity.signals} held-out new signals, ${report.testing.previous.signals} prior-model signals, ${report.testing.benchmark.signals} benchmark holds. Threshold ${report.calibration.threshold} (${report.calibration.retained?'retained production policy':report.calibration.applied?'training calibrated':'provisional'}).`);
  console.log(`Report: ${path.relative(ROOT,output)}; status: ${report.status}.`);
 }

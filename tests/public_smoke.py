@@ -23,12 +23,11 @@ for attempt in range(attempts):
             response=page.goto(base,wait_until='domcontentloaded');assert response.status==200
             page.wait_for_function("document.querySelectorAll('.card').length>0")
             assert page.locator('.card').count()<=20;assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-            page.locator('[data-condition="LP"]').click();page.wait_for_function("document.querySelector('[data-condition=LP]').getAttribute('aria-pressed')==='true'")
-            if snapshot['conditionCoverage']['LP']['verified']==0:assert 'LP Price Unavailable' in page.locator('.card').first.inner_text()
+            assert page.locator('#conditionSelector').count()==0;assert 'market price' in page.locator('.card').first.inner_text().lower();assert '$' in page.locator('.price-line strong').first.inner_text()
             page.locator('#pageSize').select_option('100');page.wait_for_function("document.querySelectorAll('.card').length===100")
             page.locator('#cardView').select_option('compact');page.locator('.card').nth(99).scroll_into_view_if_needed();assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
-            page.reload(wait_until='domcontentloaded');page.wait_for_function("document.querySelectorAll('.card').length===100");assert page.locator('#pageSize').input_value()=='100';assert page.locator('[data-condition="LP"]').get_attribute('aria-pressed')=='true'
-            page.locator('[data-condition="NM"]').click();page.locator('#pageSize').select_option('20');page.locator('#cardView').select_option('detailed')
+            page.reload(wait_until='domcontentloaded');page.wait_for_function("document.querySelectorAll('.card').length===100");assert page.locator('#pageSize').input_value()=='100'
+            page.locator('#pageSize').select_option('20');page.locator('#cardView').select_option('detailed')
             for sid in vintage:
                 page.evaluate('sid=>location.hash="#sets/"+sid',sid)
                 page.wait_for_function('name=>document.querySelector("#selectedSet h1")?.textContent===name',arg=sets[sid]['name'])
@@ -56,8 +55,8 @@ for attempt in range(attempts):
             assert foil_result.value.status==200 and foil_result.value.json()['printing']=='Reverse Holofoil'
             page.wait_for_selector('#collectionForm')
             page.locator('#closeModal').click()
-            page.locator('[data-nav="home"]').click();page.wait_for_selector('.pulse-card');assert snapshot['health']['funnel'][-1]['count']==snapshot['health']['signals']['buy']
-            page.locator('[data-nav="settings"]').click();page.wait_for_selector('#healthSignalCounts');assert str(snapshot['health']['signals']['buy'])+' Buy Now' in page.locator('#healthSignalCounts').inner_text()
+            page.locator('[data-nav="home"]').click();page.wait_for_selector('.pulse-card');assert snapshot['health']['funnel'][-1]['count']==snapshot['health']['signals']['buy']+snapshot['health']['signals'].get('investigate',0)
+            page.locator('[data-nav="settings"]').click();page.wait_for_selector('#healthSignalCounts');assert str(snapshot['health']['signals']['buy'])+' Strong Opportunity' in page.locator('#healthSignalCounts').inner_text()
             page.locator('[data-nav="vendor"]').click();page.wait_for_selector('#vendorSearch');page.locator('#vendorSearch').fill(priced['name']+' '+priced['number'])
             page.locator('[data-vendor-card='+json.dumps(priced['key'])+']').click();page.wait_for_selector('#vendorForm');assert page.locator('#vendorPurchase').is_disabled()
             page.locator('.vendor-assumptions > summary').click()

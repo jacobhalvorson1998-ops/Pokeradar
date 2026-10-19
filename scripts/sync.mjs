@@ -1,7 +1,7 @@
 /** Daily, checkpointed English physical-card discovery and printing-verified prices. */
 import fs from 'node:fs';
 import path from 'node:path';
-import {priorityOrder} from './priority.mjs';
+import {priorityOrder,priorityTier} from './priority.mjs';
 import {fileURLToPath} from 'node:url';
 import {resolveVintagePrinting,money, validDay, isFreshDay, cleanNumber, normalizedSet, parseTickerHits, parseHistory, parseHistoryForPrinting, parseCSV, verifyTickerProduct, reconcileCatalog, matchFailureReason, createRateLimitedClient, atomicWriteJSON, migrateResolution, resolutionFailure, mergeHistory, BudgetExceeded} from './provider.mjs';
 export {parseTickerHits, parseHistory, parseCSV, cleanNumber} from './provider.mjs';
@@ -133,7 +133,7 @@ export async function updatePrices(catalog, {client, report}) {
   };
   const personalKeys=read('data/priority_keys.json',[]);
   const sorted = priorityOrder(catalog,prices,Array.isArray(personalKeys)?personalKeys:[]);
-  report.priorityPolicy='Explicit personal keys, missing fresh prices and exact identities, chase cards, then historical refresh; no browser ownership uploaded automatically';
+  report.priorityPolicy='Vintage holos and important older cards, exact special/reverse printings, explicit tracked/wanted keys, modern chases, remaining cards; missing fresh quotes first within each group; no browser ownership uploaded automatically';
   for (const card of sorted) ids[card.key] ||= migrateResolution(null);
   const cachedProducts=new Map();for(const set of Object.values(read('data/ticker_set_cache.json',{})))for(const p of set.cards||[])cachedProducts.set(p.product_id,productFromSet(p,set));
   for(const card of sorted){
@@ -278,8 +278,9 @@ export async function updatePrices(catalog, {client, report}) {
     if (report.bulkQuoteSetsRetrieved % 10 === 0) console.log(`BULK PRICE progress: ${report.bulkQuoteSetsRetrieved}/${quoteGroups.size} sets; ${report.bulkQuotesRetrieved || 0} verified quotes; ${Math.round((Date.now() - priceStageStarted) / 1000)}s pricing elapsed`);
   }, error => { report.priceErrors++; console.warn(`whole-set quote refresh: ${error.message}; saved prices retained`); });
   const needsLegacyVerification = card => prices[card.key]?.price && (prices[card.key].productId!==ids[card.key]?.productId || (card.variantVerified&&prices[card.key].printing!==card.printing) || !prices[card.key]?.printing || prices[card.key]?.language !== 'en' || !prices[card.key]?.matchEvidence);
+  const personalPrioritySet=new Set(personalKeys);
   const historyTargets = sorted.filter(card => ids[card.key]?.status === 'matched' && (!historyStatus[card.key]?.nextRetryAt || historyStatus[card.key].nextRetryAt <= stamp()) && (prices[card.key]?.historyChecked !== today() || needsLegacyVerification(card)))
-    .sort((a,b)=>Number(personalKeys.includes(b.key))-Number(personalKeys.includes(a.key))||Number(!!(prices[a.key]?.verifiedMatch&&isFreshDay(prices[a.key]?.asOf)))-Number(!!(prices[b.key]?.verifiedMatch&&isFreshDay(prices[b.key]?.asOf)))||Number(!!needsLegacyVerification(b))-Number(!!needsLegacyVerification(a))||Number((b.hype||0)>=85)-Number((a.hype||0)>=85)||String(prices[a.key]?.historyChecked||'').localeCompare(String(prices[b.key]?.historyChecked||'')));
+    .sort((a,b)=>priorityTier(a,personalPrioritySet)-priorityTier(b,personalPrioritySet)||Number(personalKeys.includes(b.key))-Number(personalKeys.includes(a.key))||Number(!!(prices[a.key]?.verifiedMatch&&isFreshDay(prices[a.key]?.asOf)))-Number(!!(prices[b.key]?.verifiedMatch&&isFreshDay(prices[b.key]?.asOf)))||Number(!!needsLegacyVerification(b))-Number(!!needsLegacyVerification(a))||Number((b.hype||0)>=85)-Number((a.hype||0)>=85)||String(prices[a.key]?.historyChecked||'').localeCompare(String(prices[b.key]?.historyChecked||'')));
   if (!historyTargets.length && !report.freshQuotesRetrieved) {
     const confirm = sorted.find(card => ids[card.key]?.status === 'matched' && prices[card.key]?.printing && (!historyStatus[card.key]?.nextRetryAt || historyStatus[card.key].nextRetryAt <= stamp()));
     if (confirm) historyTargets.push(confirm); // Confirm one real quote on an otherwise up-to-date repeat.

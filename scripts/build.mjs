@@ -1,15 +1,13 @@
 import {auditVintage} from './vintage-audit.mjs';
-import {runConditionBacktest} from './condition-backtest.mjs';
-import {conditionQuote,conditionHistory,printingLabel} from '../site/lib/condition-pricing.mjs';
-import {scoreCondition} from './condition-model.mjs';
-import {marketMetrics,median} from './opportunity.mjs';
-import {DEPLOYED_BUY_THRESHOLD} from './model-policy.mjs';
+import {printingLabel} from '../site/lib/printing.mjs';
+import {detailFileId} from './detail-path.mjs';
+import {assessMarketCatalog,rankPreference,AGGREGATE_MODEL,OPPORTUNITY_POLICY} from './aggregate-model.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
-import {assessCatalog,preferenceScore,PREFERENCE_PROFILES,MODEL_VERSION} from './opportunity.mjs';
-import {catalogHealth} from './health.mjs';
+import {PREFERENCE_PROFILES} from './opportunity.mjs';
+import {marketHealth} from './health.mjs';
 import {buildMarketPulse} from './market-pulse.mjs';
 import {tickermintObservation,validateObservation,disagreement} from '../site/lib/price-source.mjs';
 import {renderProviderResearch} from './render-provider-research.mjs';
@@ -21,42 +19,38 @@ export function build({asOf=new Date().toISOString().slice(0,10)}={}){
  const catalog=read('site/catalog.json',null),saved=read('site/prices.json',null);
  if(!Array.isArray(catalog?.cards)||!saved?.prices)throw Error('Catalog and prices are required');
  const cards=catalog.cards.map(c=>({...c,id:c.id||'card-'+createHash('sha256').update(c.key).digest('hex').slice(0,16),setId:c.setId||'set-'+createHash('sha256').update(c.set).digest('hex').slice(0,12)}));
- const evaluation=read('site/evaluation.json',null),buyThreshold=DEPLOYED_BUY_THRESHOLD;
+ const evaluation=read('site/evaluation.json',null),buyThreshold=OPPORTUNITY_POLICY.strong;
  const resolutions=read('data/resolved_ids.json',{}),report=read('data/sync_report.json',{});
  const identityAudit=auditVintage(root,{identityOnly:true}),safePrices={...saved.prices};for(const issue of identityAudit.mismatches)if(safePrices[issue.key])safePrices[issue.key]={...safePrices[issue.key],verifiedMatch:false,matchStatus:'review',identityReview:issue.reasons};
- const rows=assessCatalog(cards,safePrices,{asOf,buyThreshold,resolutions}).map(c=>c.verifiedMatch?c:{...c,price:null,entryPrice:null,change7:null,change14:null,change30:null,change90:null,drop90:null}),progress=catalog.progress||{};
+ const rows=assessMarketCatalog(cards,safePrices,{asOf,buyThreshold,resolutions}).map(c=>c.verifiedMatch?c:{...c,price:null,entryPrice:null,change7:null,change14:null,change30:null,change90:null,drop90:null}),progress=catalog.progress||{};
  const coverage={reviewed:progress.reviewed??progress.catalogued??0,universe:progress.universe??cards.filter(c=>c.primary!==false).length,eligible:cards.length,baseCards:cards.filter(c=>c.primary!==false).length,verified:rows.filter(c=>c.verifiedMatch&&!c.stale&&c.price>0).length,historyReady:rows.filter(c=>c.verifiedMatch&&!c.stale&&c.historyEnough).length,comparable:rows.filter(c=>c.verifiedMatch&&!c.stale&&c.historyEnough&&c.peers?.reliable).length,unmatched:cards.filter(c=>resolutions[c.key]?.status!=='matched').length,variantMetadata:cards.filter(c=>c.primary!==false&&c.variantMetadataChecked).length,discoveryComplete:progress.discoveryComplete??progress.bulkRarityComplete??false,reviewMethod:progress.discoveryMethod||'English physical card catalog'};
- const health=catalogHealth(rows,{asOf,buyThreshold}),pulse=buildMarketPulse(rows,safePrices,{asOf});
+ const health=marketHealth(rows,{asOf,buyThreshold}),pulse=buildMarketPulse(rows,safePrices,{asOf});
  write('site/health.json',health);
  const supplemental=read('data/supplemental_sources.json',{observations:[],approvedSources:[]});
  const sourceExtras=(supplemental.observations||[]).filter(o=>(supplemental.approvedSources||[]).includes(o.source)).flatMap(o=>{try{return [validateObservation(o,{asOf})];}catch{return [];}});
  const extrasByCard=new Map();for(const o of sourceExtras){if(!extrasByCard.has(o.cardId))extrasByCard.set(o.cardId,[]);extrasByCard.get(o.cardId).push(o);}
- const conditionRows=new Map(),baseTotals=new Map();for(const c of rows)if(c.primary!==false)baseTotals.set(c.setId,(baseTotals.get(c.setId)||0)+1);
- for(const condition of ['NM','LP']){const evaluated=rows.map(card=>{const observations=extrasByCard.get(card.baseId||card.id)||[],quote=conditionQuote(card,observations,condition,{asOf}),history=conditionHistory(card,observations,quote,{asOf});return {...card,quote,history,metrics:marketMetrics({price:quote.price,asOf:quote.asOf,history},{asOf})};});const cohorts=new Map();for(const c of evaluated){const k=[c.setId,c.quote.source,c.quote.metricType].join('|');if(!cohorts.has(k))cohorts.set(k,[]);cohorts.get(k).push(c);}for(const c of evaluated){const cohort=cohorts.get([c.setId,c.quote.source,c.quote.metricType].join('|')),valid=cohort.filter(p=>p.primary!==false&&p.quote.verified&&p.metrics.historyEnough),setTrend=valid.length>=10&&valid.length/Math.max(1,baseTotals.get(c.setId)||0)>=.3?median(valid.map(p=>p.metrics.change30)):null,model=scoreCondition({card:c,quote:c.quote,history:c.history,peers:cohort,setTrend,asOf});if(!conditionRows.has(c.key))conditionRows.set(c.key,{});if(c.quote.reference)conditionRows.get(c.key)[condition]={...c.quote,opportunity:model,history:c.history.slice(-120)};}}
- const conditionCoverage={NM:{verified:0,stale:0,conflicts:0,missing:0,vintage:0},LP:{verified:0,stale:0,conflicts:0,missing:0,vintage:0},vintageTotal:rows.filter(c=>c.year>=1999&&c.year<=2012).length,quarantinedAggregate:identityAudit.mismatches.length,missingVariants:rows.filter(c=>!c.variantVerified||c.priceIdentityAmbiguous).length,unmatched:coverage.unmatched,aggregate:coverage.verified,total:rows.length};
- for(const row of rows){row.identityLabel=printingLabel(row);row.conditionData=Object.keys(conditionRows.get(row.key)||{}).length?conditionRows.get(row.key):null;for(const condition of ['NM','LP']){const q=row.conditionData?.[condition],n=conditionCoverage[condition];if(!q)n.missing++;else if(q.conflict.status==='conflict')n.conflicts++;else if(q.stale)n.stale++;else if(q.verified){n.verified++;if(row.year<=2012)n.vintage++;}}}
- health.conditionCoverage=conditionCoverage;write('site/health.json',health);
+ for(const row of rows)row.identityLabel=printingLabel(row);
  const sets=read('data/sets.json',[]),bySet=new Map(sets.map(s=>[s.id,{...s}]));
  for(const row of rows)if(!bySet.has(row.setId))bySet.set(row.setId,{id:row.setId,name:row.set,year:row.year,era:'Pokémon TCG',releaseDate:row.releaseDate||null,logo:null});
  const groups=new Map();for(const row of rows){if(!groups.has(row.setId))groups.set(row.setId,[]);groups.get(row.setId).push(row);}
  fs.mkdirSync(path.join(root,'site/details'),{recursive:true});const names=new Set();
  for(const row of rows){
-  const history=saved.prices[row.key]?.history||[];row.hasDetail=row.verifiedMatch&&history.length>0||!!row.conditionData;
-  row.profiles=row.score===null?null:PREFERENCE_PROFILES.map(p=>{const r=preferenceScore(row,{...p,buyThreshold});return [r.score,r.signal];});
+  const history=saved.prices[row.key]?.history||[];row.hasDetail=row.verifiedMatch&&history.length>0;
+  row.profiles=row.score===null?null:PREFERENCE_PROFILES.map(p=>{const r=rankPreference(row,{...p,buyThreshold});return [r.score,r.signal];});
   if(!row.hasDetail)continue;
-  if(!/^[\w.-]+$/.test(row.id))throw Error('Unsafe detail id');names.add(row.id+'.json');
+  row.detailId=detailFileId(row.id);if(names.has(row.detailId+'.json'))throw Error('Duplicate detail identity');names.add(row.detailId+'.json');
   let provenance=[];try{if(row.verifiedMatch)provenance.push(tickermintObservation(row,saved.prices[row.key]));}catch{}
   const relevant=(extrasByCard.get(row.baseId||row.id)||[]).filter(o=>o.cardId===(row.baseId||row.id)&&o.printing===row.printing&&o.edition===row.edition);
   const latest=new Map();for(const o of relevant){const key=JSON.stringify([o.source,o.condition,o.metricType]);if(!latest.has(key)||latest.get(key).observedDate<o.observedDate)latest.set(key,o);}provenance.push(...latest.values());
   const legacySeries=(supplemental.segments||[]).filter(segment=>(supplemental.approvedSources||[]).includes(segment.source)&&segment.identity.cardId===(row.baseId||row.id)&&segment.identity.printing===row.printing&&segment.identity.edition===row.edition).map(segment=>({...segment,observations:segment.observations.map(o=>validateObservation(o,{asOf}))}));
-  write('site/details/'+row.id+'.json',{...row,legacySeries,sources:provenance,sourceDisagreement:disagreement(provenance),history:history.slice(-120)});
+  write('site/details/'+row.detailId+'.json',{...row,legacySeries,sources:provenance,sourceDisagreement:disagreement(provenance),history:history.slice(-120)});
  }
  for(const file of fs.readdirSync(path.join(root,'site/details')))if(file.endsWith('.json')&&!names.has(file))fs.unlinkSync(path.join(root,'site/details',file));
  for(const [id,group]of groups){if(!/^[\w.-]+$/.test(id))throw Error('Unsafe set id');const set=bySet.get(id);set.total=group.filter(c=>c.primary!==false).length;set.printings=group.length;set.priced=group.filter(c=>c.verifiedMatch&&!c.stale&&c.price>0).length;set.buy=group.filter(c=>c.signal==='buy').length;set.wait=group.filter(c=>c.signal==='wait').length;set.pulse=pulse.sets[id];set.metadataChecked=group.filter(c=>c.primary!==false&&c.variantMetadataChecked).length;write('site/sets/'+id+'.json',{version:5,set,cards:group.map(({history,...c})=>c)});}
- const columns=['id','key','baseId','name','setId','number','rarity','sourceRarity','printing','edition','primary','variantVerified','price','asOf','productId','verifiedMatch','stale','signal','score','change7','change14','change30','change90','drop90','historyEnough','confidence','entryPrice','hype','art','profileScores','hasDetail','primaryFailure','failureReasons','evidenceScore','investigate','nearRank','conditionData','identityLabel'];
- const compact=rows.map(c=>{const art=String(c.image||'').replace(/^https:\/\/assets.tcgdex.net\/en\//,'@').replace(/\/low\.webp$/,'');return columns.map(k=>k==='conditionData'?c.conditionData?Object.fromEntries(Object.entries(c.conditionData).map(([condition,{history,...q}])=>[condition,q])):null:k==='art'?art:k==='profileScores'?c.profiles?.map(p=>p[0])??null:k==='failureReasons'&&!c.investigate?null:c[k]??null);});
- const output={version:5,updatedAt:saved.updatedAt||null,catalogUpdatedAt:catalog.generatedAt||null,builtAt:new Date().toISOString(),modelVersion:'market-evidence-v3',buyThreshold,conditionPolicy:{default:'NM',allowed:['NM','LP'],aggregateIsConditionPrice:false,discrepancyThreshold:20,modelStatus:'Experimental 35/25/15/15/10; condition-history backtest pending authorized data',sourceMethod:'Newest verified observation, then configured source preference and alphabetical source; never average conflicting prices'},conditionCoverage,health:{signals:health.signals,funnel:health.funnel,primaryFailures:health.primaryFailures,nonexclusiveFailures:health.nonexclusiveFailures,investigate:health.investigate,labels:health.labels},pulse:{asOf:pulse.asOf,method:pulse.method,gates:pulse.gates},providerPolicy:{commercialPricingEnabled:false,supplementalEnabled:false,note:'Vendor provider-fed pricing is disabled until commercial rights are verified and approved. Manual condition comps are supported.'},profiles:PREFERENCE_PROFILES,coverage,updateStatus:{status:report.status||'unknown',attemptedAt:report.finishedAt||null,errors:(report.priceErrors||0)+(report.discoveryErrors||0)+(report.variantErrors||0),rateLimits:(report.providers?.tickermint?.rateLimits||0)+(report.providers?.tcgdex?.rateLimits||0),pendingHistories:report.pendingHistories??null},sets:[...bySet.values()].sort((a,b)=>a.year-b.year||a.name.localeCompare(b.name)),columns,cards:compact};
- write('site/summary.json',output);runConditionBacktest(root);auditVintage(root);renderProviderResearch(root);if(evaluation)renderEvaluation(evaluation);
+ const columns=['id','key','baseId','name','setId','number','rarity','sourceRarity','printing','edition','primary','variantVerified','price','asOf','productId','verifiedMatch','stale','signal','score','change7','change14','change30','change90','drop90','historyEnough','confidence','entryPrice','hype','art','profileScores','hasDetail','primaryFailure','failureReasons','evidenceScore','investigate','nearRank','detailId','identityLabel','reason'];
+ const compact=rows.map(c=>{const art=String(c.image||'').replace(/^https:\/\/assets.tcgdex.net\/en\//,'@').replace(/\/low\.webp$/,'');return columns.map(k=>k==='art'?art:k==='reason'&&c.signal==='pending'?null:k==='profileScores'?c.profiles?.map(p=>p[0])??null:k==='failureReasons'&&!c.investigate?null:c[k]??null);});
+ const output={version:5,updatedAt:saved.updatedAt||null,catalogUpdatedAt:catalog.generatedAt||null,builtAt:new Date().toISOString(),modelVersion:AGGREGATE_MODEL,buyThreshold:OPPORTUNITY_POLICY.strong,opportunityPolicy:OPPORTUNITY_POLICY,health:{signals:health.signals,funnel:health.funnel,primaryFailures:health.primaryFailures,nonexclusiveFailures:health.nonexclusiveFailures,investigate:health.investigate,labels:health.labels},pulse:{asOf:pulse.asOf,method:pulse.method,gates:pulse.gates},providerPolicy:{commercialPricingEnabled:false,supplementalEnabled:false,note:'Vendor provider-fed pricing is disabled until commercial rights are verified and approved. Manual condition comps are supported.'},profiles:PREFERENCE_PROFILES,coverage,updateStatus:{status:report.status||'unknown',attemptedAt:report.finishedAt||null,errors:(report.priceErrors||0)+(report.discoveryErrors||0)+(report.variantErrors||0),rateLimits:(report.providers?.tickermint?.rateLimits||0)+(report.providers?.tcgdex?.rateLimits||0),pendingHistories:report.pendingHistories??null},sets:[...bySet.values()].sort((a,b)=>a.year-b.year||a.name.localeCompare(b.name)),columns,cards:compact};
+ write('site/summary.json',output);auditVintage(root);renderProviderResearch(root);if(evaluation)renderEvaluation(evaluation);
  console.log(JSON.stringify({event:'site-built',...coverage,summaryBytes:fs.statSync(path.join(root,'site/summary.json')).size}));return output;
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url))build();

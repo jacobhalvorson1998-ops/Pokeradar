@@ -27,3 +27,11 @@ test('conflicting manual data edits remain on main and updater progress gets a r
   const result=spawnSync('bash',[helper],{cwd:worker,env:{...process.env,POKERADAR_PROGRESS_TEST:'1',GITHUB_RUN_ID:'raw-conflict'},encoding:'utf8'});assert.notEqual(result.status,0);assert.equal(git(remote,'show','main:data/progress.json'),'100');assert.equal(git(remote,'show','pokeradar-progress-raw-conflict:data/progress.json'),'42');
  }finally{fs.rmSync(root,{recursive:true,force:true});}
 });
+
+test('failed backtest leaves good published prices intact and raw progress recoverable',()=>{
+ const {root,remote,worker,editor}=fixture();try{
+  fs.writeFileSync(path.join(editor,'scripts/backtest.mjs'),"throw Error('TEST ONLY evaluation failure');\n");git(editor,'add','.');git(editor,'commit','--quiet','-m','Failing evaluation fixture');git(editor,'push','--quiet','origin','HEAD:main');
+  fs.writeFileSync(path.join(worker,'data/progress.json'),'42\n');fs.writeFileSync(path.join(worker,'site/prices.json'),'{"verified":42}\n');
+  const result=spawnSync('bash',[helper],{cwd:worker,env:{...process.env,POKERADAR_PROGRESS_TEST:'1',GITHUB_RUN_ID:'backtest-failure'},encoding:'utf8'});assert.notEqual(result.status,0);assert.equal(git(remote,'show','main:site/prices.json'),'{}');assert.equal(git(remote,'show','main:data/progress.json'),'17');assert.equal(git(remote,'show','pokeradar-progress-backtest-failure:site/prices.json'),'{"verified":42}');
+ }finally{fs.rmSync(root,{recursive:true,force:true});}
+});

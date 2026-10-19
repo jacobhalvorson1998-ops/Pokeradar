@@ -67,7 +67,7 @@ class MobileWorkflow(unittest.TestCase):
                 with page.expect_download() as download:page.locator('#settingsPanel [data-action="export"]').click()
                 csv=Path(tmp)/'backup.csv';download.value.save_as(csv);self.assertIn('Favorite vintage card',csv.read_text());page.locator('#csvImport').set_input_files(csv);page.wait_for_function("document.querySelector('#toast').textContent.includes('Imported')")
                 page.reload(wait_until='domcontentloaded');page.wait_for_function("document.querySelector('#ageWeight').value==='35'");self.assertEqual(page.locator('#significance').input_value(),'age');self.assertEqual(page.evaluate("key=>JSON.parse(localStorage.getItem('pokeradar_collection_v1')).records[key].quantity",key),2)
-                page.locator('[data-nav="home"]').click();page.locator('.advanced-filters > summary').click();page.locator('#priceMin').fill('100');page.locator('#priceMin').dispatch_event('change');page.locator('#priceMax').fill('250');page.locator('#priceMax').dispatch_event('change');page.wait_for_function("document.querySelectorAll('.card').length===0&&!document.querySelector('#empty').hidden");self.assertTrue(page.evaluate('document.documentElement.scrollWidth<=innerWidth'))
+                page.locator('[data-nav="home"]').click();page.locator('.advanced-filters > summary').click();page.locator('#priceMin').fill('100');page.locator('#priceMin').dispatch_event('change');page.locator('#priceMax').fill('250');page.locator('#priceMax').dispatch_event('change');page.wait_for_function("document.querySelectorAll('.card').length>0&&[...document.querySelectorAll('.price-line strong')].every(e=>{const p=Number(e.textContent.replace(/[^0-9.]/g,''));return p>=100&&p<=250})");self.assertTrue(page.evaluate('document.documentElement.scrollWidth<=innerWidth'))
                 page.locator('#resetFilters').click();page.wait_for_function("document.querySelectorAll('.card').length>0")
                 page.locator('#search').fill('Pikachu');page.wait_for_function("document.querySelectorAll('.card').length>0&&[...document.querySelectorAll('.card')].every(e=>/pikachu/i.test(e.textContent))")
                 page.locator('#search').fill('');page.wait_for_timeout(200)
@@ -81,11 +81,6 @@ class MobileWorkflow(unittest.TestCase):
                 for value in revised['cards']:
                     if value[cols.index('key')]==unknown['key']:
                         value[cols.index('printing')]='Normal';value[cols.index('edition')]='Standard';value[cols.index('variantVerified')]=True
-                # A future condition-aware snapshot can supply a verified NM series;
-                # legacy aggregate Buy labels alone must remain unavailable.
-                c=dict(zip(cols,r));ss=next(s for s in summary['sets'] if s['id']==c['setId'])
-                o={'cardId':c['baseId'] or c['id'],'cardName':c['name'],'setId':c['setId'],'setName':ss['name'],'collectorNumber':c['number'],'printing':c['printing'],'edition':c['edition'],'language':'en','condition':'NM','source':'Fixture','metricType':'market_estimate','currency':'USD','price':25,'observedDate':today,'fetchedAt':today+'T00:00:00Z','coverageStart':today,'termsUrl':'https://example.test/terms','url':'https://example.test/card','quality':'verified','verifiedIdentity':True,'provenance':'TEST ONLY condition boundary'}
-                r[cols.index('variantVerified')]=True;r[cols.index('conditionData')]={'NM':{'sources':[o],'opportunity':{'category':'Strong Opportunity','score':90,'confidence':80,'entryPrice':20,'reason':'TEST ONLY condition evidence'}}}
                 revised['builtAt']='2099-01-01T00:00:00Z'
                 page.route('**/summary.json*',lambda route:route.fulfill(status=200,content_type='application/json',body=json.dumps(revised)))
                 page.locator('#search').fill('');page.wait_for_function("!document.querySelector('#refreshBtn').classList.contains('busy')");page.locator('#refreshBtn').click();page.wait_for_function("Number(document.querySelector('#buyN').textContent)>0");page.wait_for_function("!document.querySelector('#refreshBtn').classList.contains('busy')")
