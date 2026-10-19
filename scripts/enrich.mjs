@@ -46,9 +46,10 @@ export function declaredPrintings(detail={}){
  }
  return [...found.values()];
 }
-export function expandCard(card,detail={},market={}){
+export function expandCard(card,detail={},market={},binding=null){
  const canonical={...card,printing:null,edition:'Unconfirmed',variantVerified:false,variantEvidence:null,priceIdentityAmbiguous:false,tcgplayerProductId:null,foil:null,subtype:null,stamps:[],standardPrintingUnsupported:false};
  const declarations=declaredPrintings(detail);
+ if(binding?.verified&&binding.cardId===(card.baseId||card.id)&&binding.name===card.name&&binding.setId===card.setId&&binding.number===card.number&&binding.language==='en'&&binding.edition==='Unlimited'&&binding.printing==='Unlimited '+binding.foil)for(const v of declarations)if(v.edition==='Standard'&&v.printing===binding.foil&&v.tcgplayerProductId===binding.productId){v.printing=binding.printing;v.edition='Unlimited';v.variantEvidence=binding.evidence;}
  for(const v of declarations)if(v.tcgplayerProductId&&declarations.some(other=>other!==v&&other.tcgplayerProductId===v.tcgplayerProductId&&other.printing===v.printing&&other.edition!==v.edition))v.priceIdentityAmbiguous=true;
  const eligible=declarations.filter(v=>['Standard','Unlimited'].includes(v.edition));
  const primary=eligible.find(v=>v.printing===market.printing)||eligible.find(v=>v.printing==='Holofoil')||eligible.find(v=>v.printing==='Normal')||eligible[0]||(declarations.length===1?declarations[0]:null);
@@ -74,14 +75,14 @@ export async function enrichCatalog(cards,{client,report={}}={}){
  const pending=originals.filter(c=>!variants[c.id]?.checkedAt||Date.parse(variants[c.id].checkedAt)<Date.now()-30*86400000).sort((a,b)=>Number(personal.has(b.key))-Number(personal.has(a.key))||Number(!!fresh(a))-Number(!!fresh(b))||Number(!!variants[a.id]?.checkedAt)-Number(!!variants[b.id]?.checkedAt)||Number((b.hype||0)>=85)-Number((a.hype||0)>=85)||Number(priorities.has(b.setId))-Number(priorities.has(a.setId))||a.year-b.year||b.hype-a.hype);
  const cap=Math.max(0,Math.min(5000,Number(process.env.MAX_VARIANT_DETAILS??1500)));
  if(client){let next=0,done=0;await Promise.all(Array.from({length:5},async()=>{while(next<Math.min(pending.length,cap)){const c=pending[next++];try{const d=await client.get(`https://api.tcgdex.net/v2/en/cards/${encodeURIComponent(c.id)}`);if(d.id!==c.id)throw Error('Card identity differs');variants[c.id]={variants:d.variants||{},variants_detailed:(d.variants_detailed||[]).map(v=>({type:v.type,subtype:v.subtype,size:v.size,stamp:v.stamp,thirdParty:{tcgplayer:v.thirdParty?.tcgplayer}})),checkedAt:new Date().toISOString()};done++;if(done%50===0){write('data/variant_cache.json',variants);console.log(`Printing metadata ${done}/${Math.min(pending.length,cap)} cards`);}}catch(e){report.variantErrors=(report.variantErrors||0)+1;console.warn(`Printing metadata deferred ${c.id}: ${e.message}`);if(/budget/.test(e.message)){next=cap;break;}}}}));report.variantDetailsRetrieved=done;write('data/variant_cache.json',variants);}
- const details=read('data/card_details.json',{});
+ const details=read('data/card_details.json',{}),bindings=read('data/provider_printing_bindings.json',{});
  const expanded=originals.flatMap(c=>{
   const meta=english.cards[c.id]||{},detail=variants[c.id]||details[c.id]||{};
   let rarity=rarityLabel(meta.rarity||c.sourceRarity||'',c.name,meta.subtypes||[]);
   // Provider-verified alternate artwork and gallery labels retain their evidence.
   if(['Alt Art','Galarian Gallery','Trainer Gallery'].includes(c.rarity))rarity=c.rarity;
   if(meta.crystal)rarity='Crystal Pokémon';
-  return expandCard({...c,...(c.setId==='miscp'?{year:null,releaseDate:null}:{}),rarity,sourceRarity:meta.rarity||c.sourceRarity,language:'en'},detail,saved[c.key]);
+  return expandCard({...c,...(c.setId==='miscp'?{year:null,releaseDate:null}:{}),rarity,sourceRarity:meta.rarity||c.sourceRarity,language:'en'},detail,saved[c.key],bindings[c.baseId||c.id]);
  });
  const sets=Object.values(setCache).filter(s=>originals.some(c=>c.setId===s.id)).map(s=>({id:s.id,name:s.name,releaseDate:s.id==='miscp'?null:s.releaseDate,year:s.id==='miscp'?null:Number(s.releaseDate.slice(0,4)),era:english.sets[s.id]?.serie||s.serie?.name||'Pokémon TCG',logo:english.sets[s.id]?.logo||(s.logo?String(s.logo)+'.webp':null),total:originals.filter(c=>c.setId===s.id).length,metadataChecked:originals.filter(c=>c.setId===s.id&&variants[c.id]?.checkedAt).length}));
  write('data/sets.json',sets);report.variantMetadataPending=pending.length-(report.variantDetailsRetrieved||0);return expanded;

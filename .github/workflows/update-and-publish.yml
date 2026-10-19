@@ -3,6 +3,15 @@ on:
   schedule:
     - cron: '18 14 * * *' # daily 14:18 UTC (~8–9 AM Central depending on DST)
   workflow_dispatch:
+    inputs:
+      priority_card:
+        description: 'Optional exact card key; supply this OR a set ID (one priority request/hour)'
+        required: false
+        type: string
+      priority_set:
+        description: 'Optional exact catalog set ID, for example base1'
+        required: false
+        type: string
   push:
     branches: [main]
     paths: ['scripts/**', 'tests/**', '.github/workflows/update-and-publish.yml']
@@ -25,6 +34,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Validate authenticated priority request
+        if: github.event_name == 'workflow_dispatch'
+        run: node scripts/priority-request.mjs
+        env:
+          PRIORITY_CARD: ${{ inputs.priority_card }}
+          PRIORITY_SET: ${{ inputs.priority_set }}
       - name: Restore evaluation histories
         id: historycache
         uses: actions/cache/restore@v4

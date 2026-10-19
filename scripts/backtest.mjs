@@ -2,6 +2,7 @@
  * Historical evaluation, never a forecast. Only pre-decision history reaches
  * the screener. Chronological training outcomes must mature before test starts.
  */
+import {auditVintage} from './vintage-audit.mjs';
 import {DEPLOYED_BUY_THRESHOLD} from './model-policy.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -165,7 +166,7 @@ export function backtest(cards, prices, {asOf=new Date(),horizonDays=30,stepDays
 export function loadBacktestInputs(root=ROOT) {
  const cards=read(path.join(root,'site/catalog.json'),{cards:[]}).cards;
  const saved=read(path.join(root,'site/prices.json'),{prices:{}}).prices;
- const prices={...saved};
+ const prices={...saved};for(const issue of auditVintage(root,{identityOnly:true}).mismatches)if(prices[issue.key])prices[issue.key]={...prices[issue.key],verifiedMatch:false,matchStatus:'review'};
  for (const cacheName of ['evaluation-history.json','full-history.json']) {
   const full=read(path.join(root,'.cache/pokeradar',cacheName),{});
   const extra=full.prices??full;

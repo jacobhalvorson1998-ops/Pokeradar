@@ -61,6 +61,11 @@ export function reconcileCatalog(cards, setCache, detailCache = {}, prices = {})
 export const normalizedName = value => String(value ?? '').normalize('NFKD').toLowerCase().replace(/[^a-z0-9♀♂]/g, '');
 function productName(value, card) {
   let text = String(value ?? '');
+  // Explicit English spelling/gender conventions, never fuzzy name matching.
+  text=text.replace(/^Nidoran\s*(?:M|♂)$/i,'Nidoran♂').replace(/^Nidoran\s*(?:F|♀)$/i,'Nidoran♀').replace(/^Imposter Professor Oak$/i,'Impostor Professor Oak');
+  const collectorSuffix=text.match(/\s*\(([A-Z]*\d+[A-Z]?)\)\s*$/i);
+  if(collectorSuffix&&cleanNumber(collectorSuffix[1])===cleanNumber(String(card.number).split('/')[0]))text=text.slice(0,collectorSuffix.index);
+
   if(['First Edition','Shadowless'].includes(card.edition))text=text.replace(/\s*\((?:1st edition|first edition|shadowless)\)\s*$/ig,'').replace(/\s+-\s*(?:1st edition|first edition|shadowless)\s*$/ig,'');
   text = text.replace(/\s+[-–]\s*[a-z]*\d+\s*\/\s*[a-z]*\d+\s*$/i, '');
   // Only descriptive rarity annotations: gameplay suffixes EX, GX, V, etc. stay.
@@ -76,6 +81,8 @@ function imageCardId(image) {
 }
 /** A product is a match only with exact identity and affirmative English evidence. */
 export function verifyTickerProduct(product, card) {
+  if(product?.printing&&card.printing&&product.printing!==card.printing)return {ok:false,reason:'exact printing mismatch'};
+  if(product?.edition&&card.edition&&product.edition!==card.edition)return {ok:false,reason:'exact edition mismatch'};
   if(card.priceIdentityAmbiguous)return {ok:false,reason:'provider cannot distinguish these edition prices'};
   if(card.primary===false&&!['Standard','Unlimited'].includes(card.edition)&&!card.tcgplayerProductId)return {ok:false,reason:'special edition lacks an authoritative product binding'};
   if (card.language && !['en', 'english', 'en-us'].includes(String(card.language).toLowerCase())) return {ok: false, reason: 'catalog card is not English'};
@@ -226,4 +233,15 @@ export function resolutionFailure(previous, reason, {now = new Date().toISOStrin
 }
 export function mergeHistory(previous = [], next = []) {
   return [...new Map([...previous, ...next].filter(([day, value]) => validDay(day) && money(value))).entries()].sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+/** A shared WotC product may call its ordinary foil "Unlimited Holofoil".
+ * Accept only the declared, product-bound pair of First Edition + Unlimited
+ * from the actual response. Never fall back to the First Edition series. */
+export function resolveVintagePrinting(card,raw,siblings=[]){
+ if(!card.variantVerified||card.primary===false||card.edition!=='Standard'||!Number.isInteger(card.year)||card.year<1999||card.year>2002||!['Holofoil','Normal'].includes(card.printing)||!card.tcgplayerProductId)return null;
+ const foil=card.printing,first='1st Edition '+foil,unlimited='Unlimited '+foil;
+ const declared=siblings.some(c=>(c.baseId||c.id)===(card.baseId||card.id)&&c.edition==='First Edition'&&c.printing===first&&c.tcgplayerProductId===card.tcgplayerProductId&&c.variantVerified);
+ if(!declared||parseHistoryForPrinting(raw,foil).points.length||!parseHistoryForPrinting(raw,first).points.length||!parseHistoryForPrinting(raw,unlimited).points.length)return null;
+ return {cardId:card.baseId||card.id,name:card.name,setId:card.setId,number:card.number,language:'en',productId:card.tcgplayerProductId,foil,printing:unlimited,edition:'Unlimited',verified:true,verifiedAt:new Date().toISOString(),url:`https://api.tickermint.cards/products/${card.tcgplayerProductId}/prices`,evidence:'TCGdex card-specific English foil + First Edition declarations share exact product; provider returns separate First Edition and Unlimited series and no generic series.'};
 }

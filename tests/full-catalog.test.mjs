@@ -19,7 +19,7 @@ test('published catalog preserves >$100, <$100, and unpriced cards',()=>{
  try{
   fs.mkdirSync(path.join(tmp,'site'),{recursive:true});
   const cards=[
-   {key:'base set|1/102',id:'base1-1',name:'Alakazam',set:'Base Set',number:'1/102',year:1999,rarity:'Standard',sourceRarity:'Rare Holo',hype:75},
+   {key:'base set|1/102',id:'base1-1',name:'Alakazam',set:'Base Set',setId:'base1',number:'1/102',printing:'Holofoil',edition:'Unlimited',variantVerified:true,tcgplayerProductId:123,year:1999,rarity:'Standard',sourceRarity:'Rare Holo',hype:75},
    {key:'modern|3/50',id:'sv-test-3',name:'Pikachu',set:'Modern',number:'3/50',year:2026,rarity:'IR',hype:97},
    {key:'old|1/10',id:'old-test-1',name:'Energy',set:'Old',number:'1/10',year:1999,rarity:'Unclassified',hype:45}
   ];

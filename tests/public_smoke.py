@@ -22,7 +22,13 @@ for attempt in range(attempts):
             page.on('pageerror',lambda error:errors.append(str(error)))
             response=page.goto(base,wait_until='domcontentloaded');assert response.status==200
             page.wait_for_function("document.querySelectorAll('.card').length>0")
-            assert page.locator('.card').count()<=18;assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+            assert page.locator('.card').count()<=20;assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+            page.locator('[data-condition="LP"]').click();page.wait_for_function("document.querySelector('[data-condition=LP]').getAttribute('aria-pressed')==='true'")
+            if snapshot['conditionCoverage']['LP']['verified']==0:assert 'LP Price Unavailable' in page.locator('.card').first.inner_text()
+            page.locator('#pageSize').select_option('100');page.wait_for_function("document.querySelectorAll('.card').length===100")
+            page.locator('#cardView').select_option('compact');page.locator('.card').nth(99).scroll_into_view_if_needed();assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+            page.reload(wait_until='domcontentloaded');page.wait_for_function("document.querySelectorAll('.card').length===100");assert page.locator('#pageSize').input_value()=='100';assert page.locator('[data-condition="LP"]').get_attribute('aria-pressed')=='true'
+            page.locator('[data-condition="NM"]').click();page.locator('#pageSize').select_option('20');page.locator('#cardView').select_option('detailed')
             for sid in vintage:
                 page.evaluate('sid=>location.hash="#sets/"+sid',sid)
                 page.wait_for_function('name=>document.querySelector("#selectedSet h1")?.textContent===name',arg=sets[sid]['name'])

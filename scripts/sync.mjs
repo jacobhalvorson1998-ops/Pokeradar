@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {priorityOrder} from './priority.mjs';
 import {fileURLToPath} from 'node:url';
-import {money, validDay, isFreshDay, cleanNumber, normalizedSet, parseTickerHits, parseHistory, parseHistoryForPrinting, parseCSV, verifyTickerProduct, reconcileCatalog, matchFailureReason, createRateLimitedClient, atomicWriteJSON, migrateResolution, resolutionFailure, mergeHistory, BudgetExceeded} from './provider.mjs';
+import {resolveVintagePrinting,money, validDay, isFreshDay, cleanNumber, normalizedSet, parseTickerHits, parseHistory, parseHistoryForPrinting, parseCSV, verifyTickerProduct, reconcileCatalog, matchFailureReason, createRateLimitedClient, atomicWriteJSON, migrateResolution, resolutionFailure, mergeHistory, BudgetExceeded} from './provider.mjs';
 export {parseTickerHits, parseHistory, parseCSV, cleanNumber} from './provider.mjs';
 const ROOT = process.env.POKERADAR_ROOT || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ROOT_URL = 'https://api.tcgdex.net/v2/en';
@@ -121,11 +121,13 @@ export async function updatePrices(catalog, {client, report}) {
   const rawIds = read('data/resolved_ids.json', {});
   const ids = Object.fromEntries(Object.entries(rawIds).map(([key, value]) => [key, migrateResolution(value)]));
   const historyStatus = read('data/history_status.json', {});
+  const printingBindings=read('data/provider_printing_bindings.json',{});
   const full = read('.cache/pokeradar/full-history.json', {prices: {}});
   full.prices ||= {};
   const checkpoint = () => {
     write('data/resolved_ids.json', ids);
     write('data/history_status.json', historyStatus);
+    write('data/provider_printing_bindings.json',printingBindings);
     write('site/prices.json', {version: 4, updatedAt: report.freshQuotesRetrieved ? stamp() : saved.updatedAt, source: 'TickerMint (TCGplayer-derived)', prices});
     write('.cache/pokeradar/full-history.json', full);
   };
@@ -133,7 +135,9 @@ export async function updatePrices(catalog, {client, report}) {
   const sorted = priorityOrder(catalog,prices,Array.isArray(personalKeys)?personalKeys:[]);
   report.priorityPolicy='Explicit personal keys, missing fresh prices and exact identities, chase cards, then historical refresh; no browser ownership uploaded automatically';
   for (const card of sorted) ids[card.key] ||= migrateResolution(null);
+  const cachedProducts=new Map();for(const set of Object.values(read('data/ticker_set_cache.json',{})))for(const p of set.cards||[])cachedProducts.set(p.product_id,productFromSet(p,set));
   for(const card of sorted){
+    const cached=cachedProducts.get(card.tcgplayerProductId||ids[card.key]?.productId);if(cached&&!verifyTickerProduct(cached,card).ok){if(prices[card.key])prices[card.key]={...prices[card.key],verifiedMatch:false,matchStatus:'review'};ids[card.key]=resolutionFailure(ids[card.key],'cached provider identity requires review');continue;}
     if(!card.variantVerified||!card.tcgplayerProductId||card.priceIdentityAmbiguous)continue;
     const old=ids[card.key];
     if(old.status==='matched'&&old.productId===card.tcgplayerProductId)continue;
@@ -240,7 +244,8 @@ export async function updatePrices(catalog, {client, report}) {
   const quoteGroups = new Map();
   for (const card of sorted) {
     const record = ids[card.key], previous = prices[card.key];
-    if(card.variantVerified&&previous?.printing!==card.printing)continue;
+    if(card.priceIdentityAmbiguous||card.variantVerified&&previous?.printing!==card.printing)continue;
+    if(previous?.edition&&!['Standard','Unlimited'].includes(card.edition)&&previous.edition!==card.edition)continue;
     if (record?.status !== 'matched' || !record.groupId || !previous?.verifiedMatch || previous.productId !== record.productId || previous.language !== 'en' || !previous.matchEvidence || !previous.printing) continue;
     if (!quoteGroups.has(record.groupId)) quoteGroups.set(record.groupId, []);
     quoteGroups.get(record.groupId).push(card);
@@ -284,10 +289,11 @@ export async function updatePrices(catalog, {client, report}) {
     try {
       const previous = prices[card.key] || {};
       // Existing explicitly verified variant remains fixed; legacy aggregates are re-derived.
+      const binding=resolveVintagePrinting(card,raw,catalog);if(binding){printingBindings[card.baseId||card.id]=binding;card.printing=binding.printing;card.edition=binding.edition;card.variantEvidence=binding.evidence;}
       const chosen = parseHistoryForPrinting(raw, card.variantVerified ? card.printing : previous.printing || null);
       if (!chosen.points.length) { historyStatus[card.key] = resolutionFailure(historyStatus[card.key], chosen.reason); report.priceErrors++; console.warn(`HISTORY ${card.key}: ${chosen.reason}; saved price preserved`); return; }
       const [providerDay, providerPrice] = chosen.points.at(-1);
-      const sameVariant = previous.printing === chosen.printing && previous.productId === resolution.productId && previous.verifiedMatch && previous.language === 'en' && previous.matchEvidence;
+      const sameVariant = (!previous.edition&&['Standard','Unlimited','Unconfirmed',undefined].includes(card.edition)||previous.edition===card.edition) && previous.printing === chosen.printing && previous.productId === resolution.productId && previous.verifiedMatch && previous.language === 'en' && previous.matchEvidence;
       // A set CSV may be fresher than the history endpoint. Backfill that same
       // verified printing without replacing its newer quote or claiming freshness.
       const preserveQuote = sameVariant && previous.asOf > providerDay;

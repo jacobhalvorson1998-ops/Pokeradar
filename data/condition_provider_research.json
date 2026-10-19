@@ -1,0 +1,93 @@
+[
+  {
+    "name": "Scrydex history",
+    "url": "https://scrydex.com/docs/pokemon/price-history",
+    "status": 403,
+    "error": "HTTP Error 403: Forbidden",
+    "note": "Access failed; no verification bypass or paid API request was attempted."
+  },
+  {
+    "name": "Scrydex pricing",
+    "url": "https://scrydex.com/pricing",
+    "status": 403,
+    "error": "HTTP Error 403: Forbidden",
+    "note": "Access failed; no verification bypass or paid API request was attempted."
+  },
+  {
+    "name": "Scrydex terms",
+    "url": "https://scrydex.com/terms",
+    "status": 403,
+    "error": "HTTP Error 403: Forbidden",
+    "note": "Access failed; no verification bypass or paid API request was attempted."
+  },
+  {
+    "name": "JustTCG cards",
+    "url": "https://justtcg.com/docs/api/cards",
+    "status": 403,
+    "error": "HTTP Error 403: Forbidden",
+    "note": "Access failed; no verification bypass or paid API request was attempted."
+  },
+  {
+    "name": "JustTCG pricing",
+    "url": "https://justtcg.com/pricing",
+    "status": 403,
+    "error": "HTTP Error 403: Forbidden",
+    "note": "Access failed; no verification bypass or paid API request was attempted."
+  },
+  {
+    "name": "JustTCG terms",
+    "url": "https://justtcg.com/terms",
+    "status": 403,
+    "error": "HTTP Error 403: Forbidden",
+    "note": "Access failed; no verification bypass or paid API request was attempted."
+  },
+  {
+    "name": "TickerMint developers",
+    "url": "https://tickermint.cards/developers",
+    "status": 403,
+    "error": "HTTP Error 403: Forbidden",
+    "note": "Access failed; no verification bypass or paid API request was attempted."
+  },
+  {
+    "name": "TickerMint terms",
+    "url": "https://tickermint.cards/terms",
+    "status": 403,
+    "error": "HTTP Error 403: Forbidden",
+    "note": "Access failed; no verification bypass or paid API request was attempted."
+  },
+  {
+    "name": "TCGplayer condition standards",
+    "url": "https://help.tcgplayer.com/hc/en-us/articles/221430307-Card-Condition-Guide",
+    "status": 200,
+    "finalUrl": "https://help.tcgplayer.com/hc/en-us/articles/221430307-Card-Conditioning-Overview",
+    "sha256": "671411ae49693cf832a612d970823c04a3b084950934e3e1635de872564378b7",
+    "snippets": [
+      "Card Conditioning Overview \u2013 TCGplayer.com",
+      "Condition, Identification and Language Guides",
+      "Card Conditioning Overview",
+      "Please note: the TCGplayer marketplace allows sellers to list cards in Near Mint, Lightly Played, Moderately Played, Heavily Played, and Damaged condition. Mint or Gem Mint cards are not sold on TCGplayer.",
+      "TCGplayer card conditions are a point of reference for both Buyers and Sellers. TCGplayer has collected feedback from players, retailers, and the community, and we've used their input to develop guidelines that address common concerns about card conditions. By providing clear criteria of what a card should look like at each condition, we make sure everyone knows what to expect when buying and selling cards on TCGplayer.com.",
+      "As TCGplayer refines its conditioning processes and as new products are released by publishers, the standards may need to be updated or added to. The Conditioning Release Notes section of our help center contains the help files which outline these updates; this information will also be reflected or referred to in the Comprehensive Guide linked below, once published.",
+      "This help file aims to give a brief overview of card conditioning expectations from TCGplayer and guide users to more detailed resources. This guide has been developed to simplify our Card Condition Standards, which outline the criteria for our conditioning scale. The Understanding Card Condition Imperfections: A Comprehensive Guide help file provides more specific details on the imperfections that impact card condition and how they are evaluated by TCGplayer.",
+      "Conditioning",
+      "The condition of a card is determined by the number and extent of imperfections that a card exhibits. Imperfections include wear and damage as a result of play, handling, and/or storage as well as any atypical printing or manufacturing defects. Imperfections are characterized by both a Type (ex: scratch) and a Severity (ex: slight). Some imperfections may impact the integrity of a card, as defined below. Typically, imperfections that impact a card\u2019s integrity will result in the card being considered Damaged. We consider these 3 aspects with regards to the integrity of a card:",
+      "Cards in Near Mint (NM) condition show minimal wear from shuffling, play, or handling and can have a nearly unmarked surface, crisp corners, and unblemished edges outside of a few slight flaws. A Near Mint card may have slight edge wear or a couple minor scratches, but overall look nearly unplayed with no major defects. Certain manufacturing defects such as miscuts/shifting may cause an otherwise Near Mint card to be considered Damaged and no longer eligible for Direct. These cards can still be listed on the Marketplace as Damaged, or as a Listing with Photo at the condition the card would be at if it was not defected.",
+      "The acceptable range of cards within the Near Mint condition includes both cards with no imperfections and cards with few, minimal imperfections.",
+      "Cards in Lightly Played (LP) condition may have minor edge wear, scuffs, or scratches. There are no significant imperfections or issues with the structural integrity of the card. Noticeable imperfections are okay, but none should be too severe or at too high a volume.",
+      "The acceptable range of cards within the Lightly Played condition includes both cards with few or a handful of minor imperfections.",
+      "Cards in Moderately Played (MP) condition can have edge wear, surface wear, scratching or scuffing, bends with creases, or a combination of moderate examples of these imperfections. Some imperfections, such as bends, peels, or liquid exposure may be acceptable at Moderately Played as long as they do not impact the structural integrity of the card. Measurements provided with the standards will determine acceptability.",
+      "Cards in Heavily Played (HP) condition show a major amount of wear. Cards can show a variety of moderate imperfections along with creasing, whitening and other faults. Heavily Played cards can also have defects or severe imperfections that do not impact the integrity of the card. While Heavily Played cards can have many imperfections, they must still be able to be authenticated and cannot be structurally damaged.",
+      "Damaged cards show wear or imperfections beyond the standards for other conditions. Cards in Damaged condition may have major border wear, scratching or scuffing, as well as bends, tears, splitting, foreign substances such as food or liquid, or other damage that impacts the integrity of the card. Damaged cards are not eligible for Direct, but can be listed on the Marketplace or as a Listing with Photo, except cards with foreign substances.",
+      "Certain manufacturing defects, such as crimping and significant miscuts/shifting, will automatically cause a card to be considered Damaged regardless of any other imperfection(s). Cards with alterations such as stamps, signatures, paint, marker, etc. are also considered Damaged. In both cases, a Listing with Photo may be more suitable for listing the card. When listing a defected or altered card as a Listing with Photo, you may list it at the condition the card would be considered without the defect or alteration.",
+      "Note: With rare exception, TCGplayer does not take the quality control of a product line into account when determining whether a card is considered damaged/defected. That is, frequent miscutting or manufacturing defects from a product line does not typically exempt those products from being considered defected. Where exceptions do exist, they are for instances where every card, or a vast majority, exhibit the same defect and are determined on a case-by-case basis. (For example, every copy of Intellectual Offering from Commander 2014 has a small inking error in the art). Exceptions and how to evaluate specific defects will be noted in Conditioning Release Notes, and/or the Comprehensive Guide.",
+      "Foil versions of cards are evaluated by the same criteria we use for their non-Foil counterparts. This provides a consistent set of rules for conditioning.",
+      "Our Conditioning Guide outlines measurements based on standard card imperfections. Given that oversized cards are 1.4x larger than a standard card, we allow 1.4x the size of any imperfection for the different severities.",
+      "While the language of a printing is not a component of card condition, it does impact how and where you can list a product. With the exception of Japanese Pokemon cards (more information here: Japanese Pok\u00e9mon FAQ) and Magic: the Gathering cards that have language options available, Listings with Photos should be utilized to list all other non-English cards. The card language must be clearly communicated in the listing title and description using the full name of the language (eg: Japanese instead of JPN, Italian instead of ITA, etc). This help file can be used to identify what language a Magic: the Gathering card is in.",
+      "5/19/2022 - Added information about the integrity of cards to Card Condition Standards PDF.",
+      "2/25/2022 - Updated to new Card Condition Standards.",
+      "2/5/2024 - Added note about Conditioning Release Notes.",
+      "3/14/25 - Updated most sections to clarify conditions and link to applicable Conditioning Release Notes. Added Print Language section."
+    ],
+    "note": "Public documentation only; authorized API history coverage and commercial rights are NOT established by a page fetch."
+  }
+]

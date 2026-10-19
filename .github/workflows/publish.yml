@@ -59,10 +59,12 @@ jobs:
         run: |
           python tests/mobile_smoke.py
           python tests/vendor_smoke.py
+          python tests/condition_smoke.py
       - name: Test the mobile WebKit engine
         run: |
           BROWSER_ENGINE=webkit python tests/mobile_smoke.py
           BROWSER_ENGINE=webkit python tests/vendor_smoke.py
+          BROWSER_ENGINE=webkit python tests/condition_smoke.py
       - name: Configure Pages
         uses: actions/configure-pages@v5
         with:

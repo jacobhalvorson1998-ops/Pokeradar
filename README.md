@@ -1,3 +1,5 @@
+Current upgrade: persistent NM/LP browsing, 20/50/100-card pages and exact vintage validation. Existing TickerMint prices are aggregate research only; **NM and LP currently show unavailable until an authorized condition provider is validated**. See [condition upgrade report](CONDITION_UPGRADE_REPORT.md) and [public vintage audit](https://jacobhalvorson1998-ops.github.io/Pokeradar/vintage-audit.html).
+
 # PokéRadar
 
 Personal English Pokémon card research and set completion, published at **https://jacobhalvorson1998-ops.github.io/Pokeradar/**.

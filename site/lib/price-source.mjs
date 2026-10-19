@@ -4,6 +4,7 @@ const validDate=d=>typeof d==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(d)&&Number.is
 export function validateObservation(raw,{asOf=new Date().toISOString().slice(0,10)}={}){
  const required=['cardId','printing','edition','language','source','metricType','observedDate','fetchedAt','termsUrl','provenance','coverageStart'];
  for(const key of required)if(typeof raw?.[key]!=='string'||!raw[key].trim())throw Error('Source observation missing '+key);
+ if(['NM','LP'].includes(raw.condition)){for(const key of ['cardName','setId','setName','collectorNumber','url'])if(typeof raw[key]!=='string'||!raw[key].trim())throw Error('Condition observation missing '+key);if(!/^https:\/\//.test(raw.url))throw Error('Direct HTTPS source reference required');}
  if(raw.language!=='en'||!['market_estimate','sales_average','listing','asking','manual_comp'].includes(raw.metricType))throw Error('Unsupported language or price metric');
  if(raw.condition!==null&&!conditions.includes(raw.condition))throw Error('Condition must be explicit or null for aggregate market data');
  if(raw.verifiedIdentity!==true||!Number.isFinite(raw.price)||raw.price<=0||raw.currency!=='USD')throw Error('Verified exact identity and positive USD value required');
