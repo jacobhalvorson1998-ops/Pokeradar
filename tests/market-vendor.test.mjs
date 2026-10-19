@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {backtest} from '../scripts/backtest.mjs';
 import {buildMarketPulse} from '../scripts/market-pulse.mjs';
 import {assessCatalog} from '../scripts/opportunity.mjs';
 import {catalogHealth} from '../scripts/health.mjs';
@@ -95,4 +96,14 @@ test('authorized supplemental imports retain earlier good observations and disti
  const next=importAuthorizedSource({segments:[[{...observation,observedDate:day(120)}],[{...observation,condition:'LP',price:70}]]},approval);
  const merged=mergeSourceArchives(old,next);assert.equal(merged.observations.length,3);assert.equal(merged.segments.length,2);assert.equal(merged.validationLog.previousObservationsRetained,true);
  assert.throws(()=>importAuthorizedSource({segments:[[observation]]},{...approval,approvedByUser:false}));
+});
+
+
+test('threshold/gate sensitivity and rolling held-out windows ignore future observations',()=>{
+ const c=cards(4),p=Object.fromEntries(c.map(x=>[x.key,{...price(x),asOf:day(299),history:Array.from({length:300},(_,i)=>[day(i),i%60<35?100:80])}]));
+ const before=backtest(c,p,{asOf:day(240),retainedThreshold:90});
+ const future=Object.fromEntries(Object.entries(p).map(([k,v])=>[k,{...v,price:999999,history:[...v.history.filter(([d])=>d<=day(240)),[day(241),999999]]}]));
+ const after=backtest(c,future,{asOf:day(240),retainedThreshold:90});
+ assert.equal(before.calibration.threshold,90);assert.equal(before.calibration.retained,true);assert.deepEqual(before.testing,after.testing);assert.deepEqual(before.sensitivity,after.sensitivity);
+ assert.equal(before.sensitivity.variants.length,5);assert.ok(before.sensitivity.variants.every(v=>v.eligibleDecisions>0));
 });

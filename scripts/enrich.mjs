@@ -67,11 +67,13 @@ export async function enrichCatalog(cards,{client,report={}}={}){
   write('data/english_metadata.json',english);
  }catch(e){console.warn('Using saved English metadata: '+e.message);}
  const originals=cards.filter(c=>c.primary!==false);
+ const personalInput=read('data/priority_keys.json',[]),personal=new Set((Array.isArray(personalInput)?personalInput:[]).filter(k=>typeof k==='string').map(k=>k.split('::')[0]));
+ const saved=read('site/prices.json',{prices:{}}).prices;
+ const fresh=c=>saved[c.key]?.verifiedMatch&&saved[c.key]?.asOf&&Date.now()-Date.parse(saved[c.key].asOf+'T00:00:00Z')<=4*86400000;
  const priorities=new Set(['base1','base2','base3','base5','neo1','lc','ex1','ex16']);
- const pending=originals.filter(c=>!variants[c.id]?.checkedAt||Date.parse(variants[c.id].checkedAt)<Date.now()-30*86400000).sort((a,b)=>Number(!!variants[a.id]?.checkedAt)-Number(!!variants[b.id]?.checkedAt)||Number(priorities.has(b.setId))-Number(priorities.has(a.setId))||a.year-b.year||b.hype-a.hype);
+ const pending=originals.filter(c=>!variants[c.id]?.checkedAt||Date.parse(variants[c.id].checkedAt)<Date.now()-30*86400000).sort((a,b)=>Number(personal.has(b.key))-Number(personal.has(a.key))||Number(!!fresh(a))-Number(!!fresh(b))||Number(!!variants[a.id]?.checkedAt)-Number(!!variants[b.id]?.checkedAt)||Number((b.hype||0)>=85)-Number((a.hype||0)>=85)||Number(priorities.has(b.setId))-Number(priorities.has(a.setId))||a.year-b.year||b.hype-a.hype);
  const cap=Math.max(0,Math.min(5000,Number(process.env.MAX_VARIANT_DETAILS??1500)));
  if(client){let next=0,done=0;await Promise.all(Array.from({length:5},async()=>{while(next<Math.min(pending.length,cap)){const c=pending[next++];try{const d=await client.get(`https://api.tcgdex.net/v2/en/cards/${encodeURIComponent(c.id)}`);if(d.id!==c.id)throw Error('Card identity differs');variants[c.id]={variants:d.variants||{},variants_detailed:(d.variants_detailed||[]).map(v=>({type:v.type,subtype:v.subtype,size:v.size,stamp:v.stamp,thirdParty:{tcgplayer:v.thirdParty?.tcgplayer}})),checkedAt:new Date().toISOString()};done++;if(done%50===0){write('data/variant_cache.json',variants);console.log(`Printing metadata ${done}/${Math.min(pending.length,cap)} cards`);}}catch(e){report.variantErrors=(report.variantErrors||0)+1;console.warn(`Printing metadata deferred ${c.id}: ${e.message}`);if(/budget/.test(e.message)){next=cap;break;}}}}));report.variantDetailsRetrieved=done;write('data/variant_cache.json',variants);}
- const saved=read('site/prices.json',{prices:{}}).prices;
  const details=read('data/card_details.json',{});
  const expanded=originals.flatMap(c=>{
   const meta=english.cards[c.id]||{},detail=variants[c.id]||details[c.id]||{};

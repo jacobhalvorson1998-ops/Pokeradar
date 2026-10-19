@@ -7,6 +7,7 @@ import {assessCatalog,preferenceScore,PREFERENCE_PROFILES,MODEL_VERSION} from '.
 import {catalogHealth} from './health.mjs';
 import {buildMarketPulse} from './market-pulse.mjs';
 import {tickermintObservation,validateObservation,disagreement} from '../site/lib/price-source.mjs';
+import {renderProviderResearch} from './render-provider-research.mjs';
 import {renderEvaluation} from './render-evaluation.mjs';
 const root=process.env.POKERADAR_ROOT||path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const read=(file,fallback)=>{try{return JSON.parse(fs.readFileSync(path.join(root,file),'utf8'));}catch(e){if(e.code==='ENOENT')return fallback;throw e;}};
@@ -43,7 +44,7 @@ export function build({asOf=new Date().toISOString().slice(0,10)}={}){
  const columns=['id','key','baseId','name','setId','number','rarity','sourceRarity','printing','edition','primary','variantVerified','price','asOf','productId','verifiedMatch','stale','signal','score','change7','change14','change30','change90','drop90','historyEnough','confidence','entryPrice','hype','art','profiles','hasDetail','primaryFailure','failureReasons','evidenceScore','investigate','nearRank'];
  const compact=rows.map(c=>{const art=String(c.image||'').replace(/^https:\/\/assets.tcgdex.net\/en\//,'@').replace(/\/low\.webp$/,'');return columns.map(k=>k==='art'?art:c[k]??null);});
  const output={version:5,updatedAt:saved.updatedAt||null,catalogUpdatedAt:catalog.generatedAt||null,builtAt:new Date().toISOString(),modelVersion:'market-evidence-v3',buyThreshold,health:{signals:health.signals,funnel:health.funnel,primaryFailures:health.primaryFailures,nonexclusiveFailures:health.nonexclusiveFailures,investigate:health.investigate,labels:health.labels},pulse:{asOf:pulse.asOf,method:pulse.method,gates:pulse.gates},providerPolicy:{commercialPricingEnabled:false,supplementalEnabled:false,note:'Vendor provider-fed pricing is disabled until commercial rights are verified and approved. Manual condition comps are supported.'},profiles:PREFERENCE_PROFILES,coverage,updateStatus:{status:report.status||'unknown',attemptedAt:report.finishedAt||null,errors:(report.priceErrors||0)+(report.discoveryErrors||0)+(report.variantErrors||0),rateLimits:(report.providers?.tickermint?.rateLimits||0)+(report.providers?.tcgdex?.rateLimits||0),pendingHistories:report.pendingHistories??null},sets:[...bySet.values()].sort((a,b)=>a.year-b.year||a.name.localeCompare(b.name)),columns,cards:compact};
- write('site/summary.json',output);if(evaluation)renderEvaluation(evaluation);
+ write('site/summary.json',output);renderProviderResearch(root);if(evaluation)renderEvaluation(evaluation);
  console.log(JSON.stringify({event:'site-built',...coverage,summaryBytes:fs.statSync(path.join(root,'site/summary.json')).size}));return output;
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url))build();
