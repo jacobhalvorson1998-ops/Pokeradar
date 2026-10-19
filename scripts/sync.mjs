@@ -1,6 +1,7 @@
 /** Daily, checkpointed English physical-card discovery and printing-verified prices. */
 import fs from 'node:fs';
 import path from 'node:path';
+import {priorityOrder} from './priority.mjs';
 import {fileURLToPath} from 'node:url';
 import {money, validDay, isFreshDay, cleanNumber, normalizedSet, parseTickerHits, parseHistory, parseHistoryForPrinting, parseCSV, verifyTickerProduct, reconcileCatalog, matchFailureReason, createRateLimitedClient, atomicWriteJSON, migrateResolution, resolutionFailure, mergeHistory, BudgetExceeded} from './provider.mjs';
 export {parseTickerHits, parseHistory, parseCSV, cleanNumber} from './provider.mjs';
@@ -128,7 +129,9 @@ export async function updatePrices(catalog, {client, report}) {
     write('site/prices.json', {version: 4, updatedAt: report.freshQuotesRetrieved ? stamp() : saved.updatedAt, source: 'TickerMint (TCGplayer-derived)', prices});
     write('.cache/pokeradar/full-history.json', full);
   };
-  const sorted = [...catalog].sort((a,b)=> Number(['Standard','Unclassified'].includes(a.rarity)) - Number(['Standard','Unclassified'].includes(b.rarity)) || a.year - b.year || b.hype - a.hype);
+  const personalKeys=read('data/priority_keys.json',[]);
+  const sorted = priorityOrder(catalog,prices,Array.isArray(personalKeys)?personalKeys:[]);
+  report.priorityPolicy='Explicit personal keys, missing fresh prices and exact identities, chase cards, then historical refresh; no browser ownership uploaded automatically';
   for (const card of sorted) ids[card.key] ||= migrateResolution(null);
   for(const card of sorted){
     if(!card.variantVerified||!card.tcgplayerProductId||card.priceIdentityAmbiguous)continue;
@@ -271,7 +274,7 @@ export async function updatePrices(catalog, {client, report}) {
   }, error => { report.priceErrors++; console.warn(`whole-set quote refresh: ${error.message}; saved prices retained`); });
   const needsLegacyVerification = card => prices[card.key]?.price && (prices[card.key].productId!==ids[card.key]?.productId || (card.variantVerified&&prices[card.key].printing!==card.printing) || !prices[card.key]?.printing || prices[card.key]?.language !== 'en' || !prices[card.key]?.matchEvidence);
   const historyTargets = sorted.filter(card => ids[card.key]?.status === 'matched' && (!historyStatus[card.key]?.nextRetryAt || historyStatus[card.key].nextRetryAt <= stamp()) && (prices[card.key]?.historyChecked !== today() || needsLegacyVerification(card)))
-    .sort((a, b) => Number(!!needsLegacyVerification(b)) - Number(!!needsLegacyVerification(a)) || String(prices[a.key]?.historyChecked || '').localeCompare(String(prices[b.key]?.historyChecked || '')) || a.year - b.year);
+    .sort((a,b)=>Number(personalKeys.includes(b.key))-Number(personalKeys.includes(a.key))||Number(!!(prices[a.key]?.verifiedMatch&&isFreshDay(prices[a.key]?.asOf)))-Number(!!(prices[b.key]?.verifiedMatch&&isFreshDay(prices[b.key]?.asOf)))||Number(!!needsLegacyVerification(b))-Number(!!needsLegacyVerification(a))||Number((b.hype||0)>=85)-Number((a.hype||0)>=85)||String(prices[a.key]?.historyChecked||'').localeCompare(String(prices[b.key]?.historyChecked||'')));
   if (!historyTargets.length && !report.freshQuotesRetrieved) {
     const confirm = sorted.find(card => ids[card.key]?.status === 'matched' && prices[card.key]?.printing && (!historyStatus[card.key]?.nextRetryAt || historyStatus[card.key].nextRetryAt <= stamp()));
     if (confirm) historyTargets.push(confirm); // Confirm one real quote on an otherwise up-to-date repeat.

@@ -2,6 +2,7 @@
  * Historical evaluation, never a forecast. Only pre-decision history reaches
  * the screener. Chronological training outcomes must mature before test starts.
  */
+import {DEPLOYED_BUY_THRESHOLD} from './model-policy.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -50,7 +51,8 @@ function tradeFor(card,history,decisionDay,horizonDays) {
  * Weekly signal dates, 30-day holds, no overlapping holds for the same card
  * within a strategy. Training/test embargo also prevents shared holding periods.
  */
-export function backtest(cards, prices, {asOf=new Date(),horizonDays=30,stepDays=7,trainingShare=.65,minCalibrationSignals=30}={}) {
+export function backtest(cards, prices, {asOf=new Date(),horizonDays=30,stepDays=7,trainingShare=.65,minCalibrationSignals=30,retainedThreshold=null}={}) {
+ if(retainedThreshold!==null&&(!Number.isFinite(retainedThreshold)||retainedThreshold<80||retainedThreshold>100))throw new RangeError('Invalid retained threshold');
  const cutoff=dayString(asOf);
  if (!cutoff) throw new RangeError('A valid asOf day is required');
  if (!Number.isInteger(horizonDays) || horizonDays<1 || !Number.isInteger(stepDays) || stepDays<1) throw new RangeError('Hold and step days must be positive integers');
@@ -65,6 +67,15 @@ export function backtest(cards, prices, {asOf=new Date(),horizonDays=30,stepDays
  const split=first!==null && last!==null ? first+Math.floor((last-first)*trainingShare/DAY)*DAY : null;
  const splitDay=split===null?null:iso(split);
  const thresholds=[80,85,90];
+ const researchVariants=[
+  {id:'strict-80',label:'Strict gates / evidence 80',accept:r=>r.buyEligible&&r.evidenceScore>=80},
+  {id:'strict-85',label:'Strict gates / evidence 85',accept:r=>r.buyEligible&&r.evidenceScore>=85},
+  {id:'strict-90',label:'Strict gates / evidence 90',accept:r=>r.buyEligible&&r.evidenceScore>=90},
+  {id:'relative-30-only-85',label:'Research only: 30D relative gate / evidence 85',accept:r=>r.gates.identity&&r.gates.fresh&&r.gates.history&&r.gates.peers&&r.gates.correction&&r.peers.relative30<=-5&&r.gates.stabilization&&r.gates.setMarket&&r.evidenceScore>=85},
+  {id:'seven-day-only-85',label:'Research only: 7D stabilization / evidence 85',accept:r=>r.gates.identity&&r.gates.fresh&&r.gates.history&&r.gates.peers&&r.gates.correction&&r.gates.relativeValue&&r.change7>=-3&&r.change7<=4&&!(r.change30<-16&&r.change7<0)&&r.gates.setMarket&&r.evidenceScore>=85}
+ ];
+ const sensitivity=Object.fromEntries(researchVariants.map(v=>[v.id,{training:[],testing:[],eligibleDecisions:0,qualifyingDecisions:0,signalDates:new Set()}]));
+ const collectSensitivity=(card,date,period)=>{for(const variant of researchVariants){const result=sensitivity[variant.id];if(period==='testing')result.eligibleDecisions++;if(!variant.accept(card))continue;if(period==='testing'){result.qualifyingDecisions++;result.signalDates.add(date);}const t=getTrade(card,date,period+'-research-'+variant.id);if(t&&(period!=='training'||t.exitDate<=splitDay))result[period].push(t);}};
  const trainingTrades=Object.fromEntries(thresholds.map(threshold=>[threshold,[]]));
  const oldTraining=[],benchmarkTraining=[];
  const testSnapshots=[];
@@ -100,6 +111,7 @@ export function backtest(cards, prices, {asOf=new Date(),horizonDays=30,stepDays
   if (!eligible.length) skipped.noEligibleCards++;
   if (testing) {testSnapshots.push({date,rows:eligible});continue}
   for (const card of eligible) {
+   collectSensitivity(card,date,'training');
    for (const threshold of thresholds) if (card.signal==='buy' && card.evidenceScore>=threshold) {
     const trade=getTrade(card,date,`train-new-${threshold}`);
     // Actual exit can be up to three days beyond its target, so enforce maturity again.
@@ -116,9 +128,11 @@ export function backtest(cards, prices, {asOf=new Date(),horizonDays=30,stepDays
  // If the available sample cannot support calibration, retain the declared default.
  // Otherwise choose training hit rate, then median return, then the stricter threshold.
  adequate.sort((a,b)=>b.hitRate-a.hitRate || b.medianReturn-a.medianReturn || b.threshold-a.threshold);
- const threshold=adequate[0]?.threshold??MODEL_DEFAULTS.buyThreshold;
+ const candidateThreshold=adequate[0]?.threshold??MODEL_DEFAULTS.buyThreshold;
+ const threshold=retainedThreshold??candidateThreshold;
  const testNew=[],testOld=[],testBenchmark=[];
  for (const {date,rows} of testSnapshots) for (const card of rows) {
+  collectSensitivity(card,date,'testing');
   if (card.signal==='buy' && card.evidenceScore>=threshold) {const trade=getTrade(card,date,'test-new');if(trade)testNew.push(trade)}
   if (oldRecommendation(card,card,{asOf:date}).signal==='buy') {const trade=getTrade(card,date,'test-old');if(trade)testOld.push(trade)}
   const trade=getTrade(card,date,'test-benchmark');if(trade)testBenchmark.push(trade);
@@ -131,8 +145,9 @@ export function backtest(cards, prices, {asOf=new Date(),horizonDays=30,stepDays
   historyStart:first===null?null:iso(first),historyEnd:last===null?null:iso(last),splitDate:splitDay,
   training:{start:first===null?null:iso(first+90*DAY),outcomesThrough:splitDay,thresholds:calibration,previous:summarizeTrades(oldTraining),benchmark:summarizeTrades(benchmarkTraining)},
   testing:{signalsAfter:splitDay,outcomesThrough:last===null?null:iso(last),...results},
-  calibration:{threshold,applied:adequate.length>0,minSignals:minCalibrationSignals,minUniqueCards:10,metric:'market evidence score, independent of age ranking',reason:adequate.length?'Selected only from mature training outcomes; held-out results did not affect selection.':'Too few independent training examples; the 80-point threshold remains provisional.'},
+  calibration:{threshold,candidateThreshold,retained:retainedThreshold!==null,applied:retainedThreshold!==null||adequate.length>0,minSignals:minCalibrationSignals,minUniqueCards:10,metric:'market evidence score, independent of age ranking',reason:retainedThreshold!==null?`Retained the previously deployed strict threshold ${retainedThreshold}; training-only sensitivity candidate ${candidateThreshold} does not automatically replace production policy.`:adequate.length?'Selected only from mature training outcomes; held-out results did not affect selection.':'Too few independent training examples; the 80-point threshold remains provisional.'},
   methodology:{horizonDays,stepDays,trainingShare,universe:cards.length,pricedHistories:actualHistories.length,signalDates:dates.length,decisionHistoryDays:90,minObservations:28,holdOverlap:'No overlapping holds for the same card in each strategy.',benchmark:'Buy every verified, fresh card across all prices with 90 days of usable history, irrespective of score.',previous:'The prior score and Buy rule, evaluated on the verified, fresh, 90-day-history cohort across all eras; the original algorithm retains its original $100 limit; missing set peers do not exclude the prior model or benchmark.',hitDefinition:`A positive market-price change after ${horizonDays} days; unchanged prices count as failed signals.`,drawdownDefinition:'Largest peak-to-trough market-price decline during each hold.',execution:'Signal-day market estimate to first provider observation on or up to three days after the horizon; no fees or slippage deducted.'},
+  sensitivity:{deployment:'Strict production gates retained. Alternative gates are research-only; held-out outcomes do not change the deployed rule.',variants:researchVariants.map(v=>{const r=sensitivity[v.id],windows=new Map();for(const t of r.testing){const i=Math.floor((epoch(t.signalDate)-split)/(90*DAY));if(!windows.has(i))windows.set(i,[]);windows.get(i).push(t);}return {id:v.id,label:v.label,training:summarizeTrades(r.training),testing:summarizeTrades(r.testing),eligibleDecisions:r.eligibleDecisions,qualifyingDecisions:r.qualifyingDecisions,per1000EligibleDecisions:r.eligibleDecisions?round(r.qualifyingDecisions/r.eligibleDecisions*1000):null,signalDates:r.signalDates.size,rollingWindows:[...windows].map(([i,trades])=>({from:iso(split+i*90*DAY),through:iso(Math.min(last,split+(i+1)*90*DAY- DAY)),...summarizeTrades(trades)}))};})},
   skipped,
   caveats:[
    'Evaluation covers all qualifying market signals, not a budget-constrained portfolio following preference rankings. Age profiles change ranking, not signal eligibility.',
@@ -168,7 +183,7 @@ export function loadBacktestInputs(root=ROOT) {
 
 if (process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
  const {cards,prices}=loadBacktestInputs();
- const report=backtest(cards,prices);
+ const report=backtest(cards,prices,{retainedThreshold:DEPLOYED_BUY_THRESHOLD});
  const output=process.env.BACKTEST_OUTPUT||path.join(ROOT,'site/evaluation.json');
  fs.mkdirSync(path.dirname(output),{recursive:true});
  fs.writeFileSync(output,JSON.stringify(report)+'\n');

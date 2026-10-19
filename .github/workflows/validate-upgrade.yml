@@ -1,0 +1,46 @@
+name: Validate research and Vendor upgrade
+on:
+  push:
+    branches: ['feature/issue-2-*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read official documentation without paid requests
+        run: python scripts/research-providers.py
+      - name: Restore historical archive
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/pokeradar/full-history.json
+          key: pokeradar-history-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            pokeradar-history-${{ runner.os }}-
+      - name: Unit tests and generated data
+        run: |
+          node --test tests/*.test.mjs
+          node scripts/backtest.mjs
+          node scripts/build.mjs
+          node scripts/verify-site.mjs
+          node --check site/app.js
+      - name: Install browser checks
+        run: |
+          python -m pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium webkit
+      - name: Chromium collection and vendor workflows
+        run: |
+          python tests/mobile_smoke.py
+          python tests/vendor_smoke.py
+      - name: WebKit collection and vendor workflows
+        run: |
+          BROWSER_ENGINE=webkit python tests/mobile_smoke.py
+          BROWSER_ENGINE=webkit python tests/vendor_smoke.py

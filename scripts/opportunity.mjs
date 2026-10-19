@@ -196,7 +196,9 @@ function scoreComponents(card) {
  return {age:collectibleAge(agePriority(card.year),collectorSignificance(card)),ageBase:agePriority(card.year),significance:collectorSignificance(card),relativeValue:rounded(relativeValue),correction:rounded(correction),momentum:rounded(momentum===null?null:momentum*.6+fortnight*.25+month*.15),popularity:Number.isFinite(card.hype) ? clamp(card.hype) : 50,liquidity:null};
 }
 
-export function assessCatalog(cards, prices, {asOf=new Date(),buyThreshold=MODEL_DEFAULTS.buyThreshold}={}) {
+const marketIdentity=(row,market)=>!!market&&market.verifiedMatch===true&&Number.isSafeInteger(market.productId)&&market.productId>0;
+
+export function assessCatalog(cards, prices, {asOf=new Date(),buyThreshold=MODEL_DEFAULTS.buyThreshold,resolutions={}}={}) {
  const evaluationDay = dayString(asOf);
  if (!evaluationDay) throw new RangeError('A valid asOf day is required');
  if (!Number.isFinite(buyThreshold) || buyThreshold<80 || buyThreshold>100) throw new RangeError('buyThreshold must be between 80 and 100');
@@ -224,9 +226,9 @@ export function assessCatalog(cards, prices, {asOf=new Date(),buyThreshold=MODEL
   // Age is a ranking preference. Market eligibility uses the 75 points
   // of non-age evidence, including zero credit for unavailable liquidity.
   const evidenceScore=score===null?null:rounded(['relativeValue','correction','momentum','popularity','liquidity'].reduce((sum,key)=>sum+(components[key]??0)*MODEL_WEIGHTS[key],0)/75);
-  const meaningfulCorrection = row.drop90<=-18 && row.belowAverage90<=-7;
+  const meaningfulCorrection = Number.isFinite(row.drop90) && Number.isFinite(row.belowAverage90) && row.drop90<=-18 && row.belowAverage90<=-7;
   const relativeValue = peers.reliable && peers.relative30<=-5 && peers.relative90<=-8;
-  const stable = row.change7>=-3 && row.change7<=4 && row.change14>=-6 && row.change14<=8;
+  const stable = Number.isFinite(row.change7)&&Number.isFinite(row.change14)&&row.change7>=-3 && row.change7<=4 && row.change14>=-6 && row.change14<=8;
   const falling = row.change7<-3 || row.change14<-6 || (row.change30<-16 && row.change7<0);
   let signal='watch',reason='Monitor for stronger relative value and a better entry.',risk='Market estimates can differ from actual Near Mint listings; demand and liquidity are unmeasured.';
   if (qualityWarnings.length) {
@@ -242,9 +244,19 @@ export function assessCatalog(cards, prices, {asOf=new Date(),buyThreshold=MODEL
    reason='High preference score, but the required correction and peer-value gates are not both met.';
   }
   const entryPrice = !qualityWarnings.length && positive(row.price) ? rounded(Math.min(row.price,(row.average90??row.price)*0.9),2) : null;
+  const gates={matched:marketIdentity(row,markets[row.key])||resolutions[row.key]?.status==='matched',fresh:positive(row.price)&&!row.stale,identity:row.verifiedMatch,history:row.historyEnough,peers:peers.reliable,correction:meaningfulCorrection,relativeValue,stabilization:stable&&!falling,setMarket:peers.setDeclining===false,evidence:Number.isFinite(evidenceScore)&&evidenceScore>=buyThreshold};
+  const failureReasons=Object.entries(gates).filter(([,pass])=>!pass).map(([gate])=>gate);
+  const market=markets[row.key]||{};
+  let primaryFailure=failureReasons[0]||null;
+  if(!gates.identity){if(market.condition&&!/^(raw|nm|near mint)$/i.test(market.condition))primaryFailure='condition';else if(card.priceIdentityAmbiguous||card.standardPrintingUnsupported||!card.printing&&!market.printing)primaryFailure='variant';else primaryFailure='identity';}
+  if(!gates.matched)primaryFailure='unmatched';
+  if(gates.matched&&!positive(row.price))primaryFailure='quote';
+  const missingMarketGates=['correction','relativeValue','stabilization','setMarket','evidence'].filter(gate=>!gates[gate]);
+  const investigate=signal!=='buy'&&gates.matched&&gates.fresh&&gates.identity&&gates.history&&(meaningfulCorrection||relativeValue)&&missingMarketGates.length<=3;
+  const nearRank=investigate?rounded((evidenceScore||0)-missingMarketGates.length*8-(peers.reliable?0:20)):null;
   const {baseQualityWarnings,...compact} = card;
   const confidence = !row.verifiedMatch ? 0 : Math.min(85,35+(!row.stale?15:0)+(row.historyEnough?20:0)+(peers.reliable?15:0));
-  return {...compact,signal,score,evidenceScore,components,confidence,confidenceLabel:confidence>=80?'Higher':confidence>=50?'Medium':'Low',buyEligible:!qualityWarnings.length&&meaningfulCorrection&&relativeValue&&stable&&!falling&&!peers.setDeclining,reason,risk,entryPrice,entryNote:signal==='wait'?'Watch threshold only; wait for stabilization before considering an entry.':'Watch threshold only; verify actual Near Mint listings and fees.',liquidity:'Unavailable',listings:'Unavailable',salesVolume:'Unavailable',modelVersion:MODEL_VERSION};
+  return {...compact,gates,failureReasons,primaryFailure,investigate,nearRank,signal,score,evidenceScore,components,confidence,confidenceLabel:confidence>=80?'Higher':confidence>=50?'Medium':'Low',buyEligible:!qualityWarnings.length&&meaningfulCorrection&&relativeValue&&stable&&!falling&&!peers.setDeclining,reason,risk,entryPrice,entryNote:signal==='wait'?'Watch threshold only; wait for stabilization before considering an entry.':'Watch threshold only; verify actual Near Mint listings and fees.',liquidity:'Unavailable',listings:'Unavailable',salesVolume:'Unavailable',modelVersion:MODEL_VERSION};
  });
 }
 

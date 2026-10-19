@@ -42,7 +42,7 @@ for attempt in range(6):
             regular=next(c for c in rows if c['baseId']==reverse['baseId'] and c['primary'] is not False)
             assert regular['id']!=reverse['id'] and regular['key']!=reverse['key']
             page.evaluate('location.hash="#sets/lc"');page.wait_for_function("document.querySelector('#goalTotal')?.textContent==='110'")
-            page.locator('#setGoal').select_option('master');page.locator('summary').click();page.locator('#printing').select_option('Reverse Holofoil')
+            page.locator('#setGoal').select_option('master');page.locator('.advanced-filters > summary').click();page.locator('#printing').select_option('Reverse Holofoil')
             page.locator('#search').fill(reverse['name']+' '+sets['lc']['name'])
             page.wait_for_function("document.querySelectorAll('.card').length>0")
             with page.expect_response(lambda r:'/details/'in r.url) as foil_result:page.locator('[data-key='+json.dumps(reverse['key'])+'] [data-detail]').first.click()

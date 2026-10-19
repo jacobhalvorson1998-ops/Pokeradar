@@ -1,9 +1,9 @@
 /* Network-first shell and snapshots: fast offline use without pinning old code. */
 const PREFIX = `pokeradar-${new URL(self.registration.scope).pathname.replace(/[^a-z0-9]/gi, '_')}-`;
-const CACHE = `${PREFIX}v7`;
+const CACHE = `${PREFIX}v8`;
 const root = new URL(self.registration.scope);
 const summaryPath = new URL('summary.json', root).pathname;
-const shell = ['./', './index.html', './styles.css?v=7', './app.js?v=7', './lib/collection.mjs', './manifest.webmanifest', './icon-192.png'];
+const shell = ['./', './index.html', './styles.css?v=7', './app.js?v=7', './lib/collection.mjs', './lib/vendor-ui.mjs', './lib/vendor.mjs', './lib/price-source.mjs', './lib/inventory.mjs', './manifest.webmanifest', './icon-192.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(shell.map(file => new Request(new URL(file, root), {cache: 'reload'})))).then(() => self.skipWaiting()));
 });
@@ -20,7 +20,7 @@ self.addEventListener('fetch', event => {
   const supported = snapshot || detail || event.request.mode === 'navigate' || /\.(?:js|mjs|css|png|webmanifest)$/.test(url.pathname);
   if (!supported) return;
   // Refresh query strings share one offline snapshot; detail histories keep their own key.
-  const cacheKey = snapshot ? new URL('summary.json', root).href : event.request;
+  const cacheKey = snapshot ? new URL('summary.json', root).href : detail ? new URL(url.pathname,root).href : event.request;
   function offlineResponse(response) {
     if (!snapshot) return response;
     const headers = new Headers(response.headers);
@@ -32,8 +32,8 @@ self.addEventListener('fetch', event => {
     try {
       const response = await fetch(event.request, {cache: 'no-cache'});
       if (response.ok) {
-        // Detail files stay uncached: one history per opened card, no unbounded cache growth.
-        if (!detail) event.waitUntil(cache.put(cacheKey, response.clone()).catch(() => {}));
+        // Keep at most 60 previously opened histories for poor-signal shows.
+        event.waitUntil((async()=>{await cache.put(cacheKey,response.clone());if(detail){const keys=(await cache.keys()).filter(r=>new URL(r.url).pathname.startsWith(new URL('details/',root).pathname));await Promise.all(keys.slice(0,Math.max(0,keys.length-60)).map(key=>cache.delete(key)));}})().catch(()=>{}));
         return response;
       }
       const saved = await cache.match(cacheKey);
