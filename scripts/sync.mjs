@@ -1,6 +1,7 @@
 /** Daily, checkpointed English physical-card discovery and printing-verified prices. */
 import fs from 'node:fs';
 import path from 'node:path';
+import {shouldRefreshHistory} from './history-refresh.mjs';
 import {priorityOrder,priorityTier} from './priority.mjs';
 import {fileURLToPath} from 'node:url';
 import {resolveVintagePrinting,money, validDay, isFreshDay, cleanNumber, normalizedSet, parseTickerHits, parseHistory, parseHistoryForPrinting, parseCSV, verifyTickerProduct, reconcileCatalog, matchFailureReason, createRateLimitedClient, atomicWriteJSON, migrateResolution, resolutionFailure, mergeHistory, BudgetExceeded} from './provider.mjs';
@@ -279,7 +280,7 @@ export async function updatePrices(catalog, {client, report}) {
   }, error => { report.priceErrors++; console.warn(`whole-set quote refresh: ${error.message}; saved prices retained`); });
   const needsLegacyVerification = card => prices[card.key]?.price && (prices[card.key].productId!==ids[card.key]?.productId || (card.variantVerified&&prices[card.key].printing!==card.printing) || !prices[card.key]?.printing || prices[card.key]?.language !== 'en' || !prices[card.key]?.matchEvidence);
   const personalPrioritySet=new Set(personalKeys);
-  const historyTargets = sorted.filter(card => ids[card.key]?.status === 'matched' && (!historyStatus[card.key]?.nextRetryAt || historyStatus[card.key].nextRetryAt <= stamp()) && (prices[card.key]?.historyChecked !== today() || needsLegacyVerification(card)))
+  const historyTargets = sorted.filter(card => ids[card.key]?.status === 'matched' && (!historyStatus[card.key]?.nextRetryAt || historyStatus[card.key].nextRetryAt <= stamp()) && (prices[card.key]?.historyChecked !== today() || needsLegacyVerification(card)) && shouldRefreshHistory(prices[card.key],{asOf:today(),startedAt:report.startedAt,identityReview:!!needsLegacyVerification(card)}))
     .sort((a,b)=>priorityTier(a,personalPrioritySet)-priorityTier(b,personalPrioritySet)||Number(personalKeys.includes(b.key))-Number(personalKeys.includes(a.key))||Number(!!(prices[a.key]?.verifiedMatch&&isFreshDay(prices[a.key]?.asOf)))-Number(!!(prices[b.key]?.verifiedMatch&&isFreshDay(prices[b.key]?.asOf)))||Number(!!needsLegacyVerification(b))-Number(!!needsLegacyVerification(a))||Number((b.hype||0)>=85)-Number((a.hype||0)>=85)||String(prices[a.key]?.historyChecked||'').localeCompare(String(prices[b.key]?.historyChecked||'')));
   if (!historyTargets.length && !report.freshQuotesRetrieved) {
     const confirm = sorted.find(card => ids[card.key]?.status === 'matched' && prices[card.key]?.printing && (!historyStatus[card.key]?.nextRetryAt || historyStatus[card.key].nextRetryAt <= stamp()));

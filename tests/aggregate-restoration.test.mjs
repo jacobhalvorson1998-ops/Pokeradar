@@ -3,6 +3,7 @@ import {assessMarketCatalog,OPPORTUNITY_WEIGHTS,rankPreference} from '../scripts
 import {summarizeTrades,backtest} from '../scripts/backtest.mjs';
 import {detailFileId} from '../scripts/detail-path.mjs';
 import {recoverPrices} from '../scripts/recover-progress.mjs';
+import {shouldRefreshHistory} from '../scripts/history-refresh.mjs';
 import {priorityOrder} from '../scripts/priority.mjs';
 const day=i=>new Date(Date.UTC(2025,0,1)+i*86400000).toISOString().slice(0,10),asOf=day(200);
 const cards=Array.from({length:12},(_,i)=>({id:'test-'+i,baseId:'test-'+i,key:'test|'+i,setId:'test',set:'Test',name:'Card '+i,number:String(i),year:1999,releaseDate:'1999-01-01',rarity:i===0?'Shining':'Holo Rare',sourceRarity:i===0?'Shining':'Rare Holo',hype:95,printing:'Holofoil',edition:'Unlimited',variantVerified:true,primary:true}));
@@ -39,4 +40,13 @@ test('coverage priority places vintage holos and editions ahead of personal mode
 test('unreleased or otherwise invalid cards cannot contribute to historical set trends',()=>{
  const future=cards.map(c=>({...c,id:c.id+'-future',key:c.key+'-future',baseId:c.baseId+'-future',year:2027,releaseDate:'2027-01-01'})),p=prices();for(const c of future)p[c.key]=quote(c,i=>i<170?10:1000);
  const r=assessMarketCatalog([...cards,...future],p,{asOf})[0];assert.equal(r.setTrend.count,12);assert.equal(r.setTrend.change30,0);assert.ok(assessMarketCatalog([...cards,...future],p,{asOf}).filter(c=>c.year===2027).every(c=>c.score===null));
+});
+
+test('fresh exact batch quotes free history requests for gaps; stale, incomplete and identity changes still refresh',()=>{
+ const startedAt=asOf+'T12:00:00Z',m={...quote(cards[0]),historyChecked:day(199),quoteCheckedAt:asOf+'T12:01:00Z',quoteMethod:'whole-set CSV; previously verified exact printing'};
+ assert.equal(shouldRefreshHistory(m,{asOf,startedAt}),false);
+ for(const patch of [{historyChecked:day(193)},{history:[[asOf,100]]},{quoteCheckedAt:day(199)+'T12:01:00Z'},{verifiedMatch:false},{historyChecked:day(201)},{quoteMethod:'old historical endpoint'}])assert.equal(shouldRefreshHistory({...m,...patch},{asOf,startedAt}),true,JSON.stringify(patch));
+ assert.equal(shouldRefreshHistory(m,{asOf,startedAt,identityReview:true}),true);
+ assert.equal(shouldRefreshHistory({...m,asOf:day(190),history:m.history.slice(0,191)},{asOf,startedAt}),true);
+ assert.equal(shouldRefreshHistory(undefined,{asOf,startedAt}),true);
 });
