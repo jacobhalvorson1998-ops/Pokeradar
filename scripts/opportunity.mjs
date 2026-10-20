@@ -63,11 +63,11 @@ export function cleanHistory(history, asOf) {
 export function historicalReference(history, target, toleranceDays=3) {
  const day = dayString(target);
  if (!day) return null;
- let result = null;
- for (const point of history) {
-  if (point[0] > day) break;
-  result = point;
- }
+ // cleanHistory supplies a sorted series. Locate the last permitted point
+ // without scanning the same history repeatedly for every card/date/window.
+ let low=0,high=history.length;
+ while(low<high){const mid=(low+high)>>1;if(history[mid][0]<=day)low=mid+1;else high=mid;}
+ const result=history[low-1]??null;
  return result && epoch(day)-epoch(result[0]) <= toleranceDays*DAY ? result : null;
 }
 
