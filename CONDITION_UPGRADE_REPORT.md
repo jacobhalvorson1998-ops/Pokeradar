@@ -1,3 +1,5 @@
+> Historical report. The user removed condition browsing; current behavior and validation are documented in [Market Restoration Report](MARKET_RESTORATION_REPORT.md).
+
 # Condition-safe vintage upgrade
 
 Live website: https://jacobhalvorson1998-ops.github.io/Pokeradar/
